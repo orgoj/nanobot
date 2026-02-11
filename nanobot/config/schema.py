@@ -182,6 +182,7 @@ class ProvidersConfig(BaseModel):
     openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
     deepseek: ProviderConfig = Field(default_factory=ProviderConfig)
     groq: ProviderConfig = Field(default_factory=ProviderConfig)
+    zai: ProviderConfig = Field(default_factory=ProviderConfig)  # Z.AI Coding Plan
     zhipu: ProviderConfig = Field(default_factory=ProviderConfig)
     dashscope: ProviderConfig = Field(default_factory=ProviderConfig)  # 阿里云通义千问
     vllm: ProviderConfig = Field(default_factory=ProviderConfig)

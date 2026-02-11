@@ -596,6 +596,7 @@ Config file: `~/.nanobot/config.json`
 | `aihubmix` | LLM (API gateway, access to all models) | [aihubmix.com](https://aihubmix.com) |
 | `dashscope` | LLM (Qwen) | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `moonshot` | LLM (Moonshot/Kimi) | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| `zai` | LLM (Z.AI Coding Plan, GLM-4.7) | [z.ai](https://z.ai) |
 | `zhipu` | LLM (Zhipu GLM) | [open.bigmodel.cn](https://open.bigmodel.cn) |
 | `vllm` | LLM (local, any OpenAI-compatible server) | — |
 

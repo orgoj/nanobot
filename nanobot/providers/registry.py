@@ -177,6 +177,26 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         model_overrides=(),
     ),
 
+    # Z.AI Coding Plan: OpenAI-compatible, needs specific base URL and env setup.
+    ProviderSpec(
+        name="zai",
+        keywords=("glm-4.7", "glm-4.5"),
+        env_key="OPENAI_API_KEY",
+        display_name="Z.AI Coding",
+        litellm_prefix="openai",            # OpenAI-compatible
+        skip_prefixes=("openai/",),
+        env_extras=(
+            ("OPENAI_API_BASE", "https://api.z.ai/api/coding/paas/v4"),
+        ),
+        is_gateway=False,
+        is_local=False,
+        detect_by_key_prefix="",
+        detect_by_base_keyword="z.ai",
+        default_api_base="https://api.z.ai/api/coding/paas/v4",
+        strip_model_prefix=False,
+        model_overrides=(),
+    ),
+
     # Zhipu: LiteLLM uses "zai/" prefix.
     # Also mirrors key to ZHIPUAI_API_KEY (some LiteLLM paths check that).
     # skip_prefixes: don't add "zai/" when already routed via gateway.
