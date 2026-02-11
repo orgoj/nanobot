@@ -651,7 +651,9 @@ That's it! Environment variables, model prefixing, config matching, and `nanobot
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `tools.restrictToWorkspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
+| `agents.defaults.bootstrap_prompt` | `null` | A prompt executed by the agent immediately upon starting the gateway. |
+| `agents.defaults.heartbeat_on_start` | `false` | If `true`, the agent checks `HEARTBEAT.md` immediately upon starting the gateway. |
+| `tools.restrict_to_workspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
 | `channels.*.allowFrom` | `[]` (allow all) | Whitelist of user IDs. Empty = allow everyone; non-empty = only listed users can interact. |
 
 
