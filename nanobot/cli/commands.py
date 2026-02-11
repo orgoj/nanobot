@@ -303,6 +303,7 @@ def gateway(
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
     from nanobot.session.manager import SessionManager
+    from nanobot.utils.logging import setup_logging
 
     if verbose:
         import logging
@@ -312,6 +313,7 @@ def gateway(
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
 
     config = load_config()
+    setup_logging(config)
     bus = MessageBus()
     provider = _make_provider(config)
     session_manager = SessionManager(config.workspace_path)
@@ -452,15 +454,17 @@ def agent(
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.config.loader import load_config
+    from nanobot.utils.logging import setup_logging
 
     config = load_config()
+    setup_logging(config)
 
     bus = MessageBus()
     provider = _make_provider(config)
 
     if logs:
         logger.enable("nanobot")
-    else:
+    elif not config.logging.file_logging_enabled:
         logger.disable("nanobot")
 
     agent_loop = AgentLoop(

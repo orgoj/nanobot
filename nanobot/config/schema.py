@@ -255,6 +255,15 @@ class ToolsConfig(BaseModel):
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
 
 
+class LoggingConfig(BaseModel):
+    """Logging configuration."""
+
+    file_logging_enabled: bool = False
+    file_log_path: str | None = (
+        None  # Optional custom path, defaults to {workspace}/logs/nanobot.log
+    )
+
+
 class Config(BaseSettings):
     """Root configuration for nanobot."""
 
@@ -263,6 +272,7 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     @property
     def workspace_path(self) -> Path:
