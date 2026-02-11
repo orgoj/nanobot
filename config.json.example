@@ -3,8 +3,10 @@
     "defaults": {
       "workspace": "/home/nanobot/workspace",
       "model": "glm-4.7",
-      "bootstrap_prompt": "Hello! I am online. Please check HEARTBEAT.md and resume any pending tasks.",
-      "heartbeat_on_start": true
+      "startup_prompt": "Hello! I am online. Please check HEARTBEAT.md and resume any pending tasks.",
+      "startup_target": "telegram:YOUR_TELEGRAM_USER_ID",
+      "heartbeat_on_start": true,
+      "heartbeat_target": "telegram:YOUR_TELEGRAM_USER_ID"
     }
   },
   "channels": {

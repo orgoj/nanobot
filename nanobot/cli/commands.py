@@ -320,6 +320,26 @@ def gateway(
     cron_store_path = get_data_dir() / "cron" / "jobs.json"
     cron = CronService(cron_store_path)
 
+    # Create heartbeat service
+    async def on_heartbeat(prompt: str) -> str:
+        """Execute heartbeat through the agent."""
+        # Split target into channel:chat_id
+        target = config.agents.defaults.heartbeat_target
+        channel, chat_id = "cli", "direct"
+        if ":" in target:
+            channel, chat_id = target.split(":", 1)
+
+        return await agent.process_direct(
+            prompt, session_key="heartbeat", channel=channel, chat_id=chat_id
+        )
+
+    heartbeat = HeartbeatService(
+        workspace=config.workspace_path,
+        on_heartbeat=on_heartbeat,
+        interval_s=30 * 60,  # 30 minutes
+        enabled=True,
+    )
+
     # Create agent with cron service
     agent = AgentLoop(
         bus=bus,
@@ -358,18 +378,6 @@ def gateway(
 
     cron.on_job = on_cron_job
 
-    # Create heartbeat service
-    async def on_heartbeat(prompt: str) -> str:
-        """Execute heartbeat through the agent."""
-        return await agent.process_direct(prompt, session_key="heartbeat")
-
-    heartbeat = HeartbeatService(
-        workspace=config.workspace_path,
-        on_heartbeat=on_heartbeat,
-        interval_s=30 * 60,  # 30 minutes
-        enabled=True,
-    )
-
     # Create channel manager
     channels = ChannelManager(config, bus, session_manager=session_manager)
 
@@ -389,12 +397,24 @@ def gateway(
             await cron.start()
             await heartbeat.start(immediate=config.agents.defaults.heartbeat_on_start)
 
-            # Run bootstrap prompt if configured
-            if config.agents.defaults.bootstrap_prompt:
+            # Run startup prompt if configured
+            if config.agents.defaults.startup_prompt:
                 logger.info(
-                    f"Executing bootstrap prompt: {config.agents.defaults.bootstrap_prompt[:50]}..."
+                    f"Executing startup prompt: {config.agents.defaults.startup_prompt[:50]}..."
                 )
-                asyncio.create_task(agent.process_direct(config.agents.defaults.bootstrap_prompt))
+                # Split target into channel:chat_id
+                target = config.agents.defaults.startup_target
+                channel, chat_id = "cli", "direct"
+                if ":" in target:
+                    channel, chat_id = target.split(":", 1)
+
+                asyncio.create_task(
+                    agent.process_direct(
+                        config.agents.defaults.startup_prompt,
+                        channel=channel,
+                        chat_id=chat_id,
+                    )
+                )
 
             await asyncio.gather(
                 agent.run(),
