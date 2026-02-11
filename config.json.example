@@ -1,0 +1,26 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/nanobot/workspace",
+      "model": "glm-4.7"
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_TELEGRAM_BOT_TOKEN",
+      "allow_from": ["YOUR_TELEGRAM_USER_ID"]
+    }
+  },
+  "providers": {
+    "zai": {
+      "api_key": "YOUR_Z_AI_API_KEY"
+    }
+  },
+  "tools": {
+    "restrict_to_workspace": true,
+    "exec": {
+      "timeout": 60
+    }
+  }
+}
