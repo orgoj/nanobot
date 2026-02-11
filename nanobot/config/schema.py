@@ -162,6 +162,8 @@ class AgentDefaults(BaseModel):
     temperature: float = 0.7
     max_tool_iterations: int = 20
     subagent_max_iterations: int = 25
+    bootstrap_prompt: str | None = None
+    heartbeat_on_start: bool = False
 
 
 class AgentsConfig(BaseModel):

@@ -2,7 +2,9 @@
   "agents": {
     "defaults": {
       "workspace": "/home/nanobot/workspace",
-      "model": "glm-4.7"
+      "model": "glm-4.7",
+      "bootstrap_prompt": "Hello! I am online. Please check HEARTBEAT.md and resume any pending tasks.",
+      "heartbeat_on_start": true
     }
   },
   "channels": {

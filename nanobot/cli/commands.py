@@ -380,7 +380,13 @@ def gateway(
     async def run():
         try:
             await cron.start()
-            await heartbeat.start()
+            await heartbeat.start(immediate=config.agents.defaults.heartbeat_on_start)
+            
+            # Run bootstrap prompt if configured
+            if config.agents.defaults.bootstrap_prompt:
+                logger.info(f"Executing bootstrap prompt: {config.agents.defaults.bootstrap_prompt[:50]}...")
+                asyncio.create_task(agent.process_direct(config.agents.defaults.bootstrap_prompt))
+                
             await asyncio.gather(
                 agent.run(),
                 channels.start_all(),

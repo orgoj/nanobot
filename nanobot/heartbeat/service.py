@@ -70,13 +70,23 @@ class HeartbeatService:
                 return None
         return None
     
-    async def start(self) -> None:
-        """Start the heartbeat service."""
+    async def start(self, immediate: bool = False) -> None:
+        """
+        Start the heartbeat service.
+        
+        Args:
+            immediate: If True, execute a tick immediately before starting the loop.
+        """
         if not self.enabled:
             logger.info("Heartbeat disabled")
             return
         
         self._running = True
+        
+        if immediate:
+            logger.info("Heartbeat: immediate tick on start...")
+            asyncio.create_task(self._tick())
+            
         self._task = asyncio.create_task(self._run_loop())
         logger.info(f"Heartbeat started (every {self.interval_s}s)")
     
