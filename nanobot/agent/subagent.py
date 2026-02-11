@@ -35,6 +35,7 @@ class SubagentManager:
         brave_api_key: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
+        max_iterations: int = 25,
     ):
         from nanobot.config.schema import ExecToolConfig
         self.provider = provider
@@ -44,6 +45,7 @@ class SubagentManager:
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
+        self.max_iterations = max_iterations
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
     
     async def spawn(
@@ -118,7 +120,7 @@ class SubagentManager:
             ]
             
             # Run agent loop (limited iterations)
-            max_iterations = 15
+            max_iterations = self.max_iterations
             iteration = 0
             final_result: str | None = None
             
@@ -130,6 +132,9 @@ class SubagentManager:
                     tools=tools.get_definitions(),
                     model=self.model,
                 )
+                
+                if response.content:
+                    logger.debug(f"Subagent [{task_id}] thought: {response.content}")
                 
                 if response.has_tool_calls:
                     # Add assistant message with tool calls
@@ -166,7 +171,7 @@ class SubagentManager:
                     break
             
             if final_result is None:
-                final_result = "Task completed but no final response was generated."
+                final_result = "Task completed but no final response was generated. The subagent may have missed the instruction to use write_file if a file output was expected."
             
             logger.info(f"Subagent [{task_id}] completed successfully")
             await self._announce_result(task_id, label, task, final_result, origin, "ok")
@@ -216,6 +221,12 @@ You are a subagent spawned by the main agent to complete a specific task.
 
 ## Your Task
 {task}
+
+## How to Save Your Results
+- For extensive research, analysis or data, SAVE YOUR FINDINGS TO A FILE using the write_file tool.
+- For brief answers or quick tasks, you may return the result directly as text.
+- Your text response will be summarized for the user, but large amounts of data should always be stored in a file.
+- If the task specifies a file path, use it exactly.
 
 ## Rules
 1. Stay focused - complete only the assigned task, nothing else
