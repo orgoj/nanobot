@@ -20,3 +20,4 @@ poetry.lock
 tests/
 botpy.log
 config.json
+.pi/

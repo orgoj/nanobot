@@ -177,44 +177,25 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         model_overrides=(),
     ),
 
-    # Z.AI Coding Plan: OpenAI-compatible, needs specific base URL and env setup.
-    ProviderSpec(
-        name="zai",
-        keywords=("glm-4.7", "glm-4.5"),
-        env_key="OPENAI_API_KEY",
-        display_name="Z.AI Coding",
-        litellm_prefix="openai",            # OpenAI-compatible
-        skip_prefixes=("openai/",),
-        env_extras=(
-            ("OPENAI_API_BASE", "https://api.z.ai/api/coding/paas/v4"),
-        ),
-        is_gateway=False,
-        is_local=False,
-        detect_by_key_prefix="",
-        detect_by_base_keyword="z.ai",
-        default_api_base="https://api.z.ai/api/coding/paas/v4",
-        strip_model_prefix=False,
-        model_overrides=(),
-    ),
-
     # Zhipu: LiteLLM uses "zai/" prefix.
     # Also mirrors key to ZHIPUAI_API_KEY (some LiteLLM paths check that).
     # skip_prefixes: don't add "zai/" when already routed via gateway.
     ProviderSpec(
         name="zhipu",
-        keywords=("zhipu", "glm", "zai"),
+        keywords=("zhipu", "glm", "zai", "glm-5", "glm-4"),
         env_key="ZAI_API_KEY",
         display_name="Zhipu AI",
         litellm_prefix="zai",              # glm-4 → zai/glm-4
         skip_prefixes=("zhipu/", "zai/", "openrouter/", "hosted_vllm/"),
         env_extras=(
             ("ZHIPUAI_API_KEY", "{api_key}"),
+            ("ZHIPUAI_API_BASE", "{api_base}"),
         ),
         is_gateway=False,
         is_local=False,
         detect_by_key_prefix="",
         detect_by_base_keyword="",
-        default_api_base="",
+        default_api_base="https://open.bigmodel.cn/api/paas/v4",
         strip_model_prefix=False,
         model_overrides=(),
     ),
@@ -329,9 +310,21 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
 # ---------------------------------------------------------------------------
 
 def find_by_model(model: str) -> ProviderSpec | None:
-    """Match a standard provider by model-name keyword (case-insensitive).
-    Skips gateways/local — those are matched by api_key/api_base instead."""
+    """Match a standard provider by model name or explicit prefix.
+    
+    1. Check for explicit prefix: "zhipu/glm-4" -> force zhipu provider.
+    2. Match by keyword (case-insensitive) from PROVIDERS list.
+    """
     model_lower = model.lower()
+
+    # 1. Explicit provider prefix override
+    if "/" in model_lower:
+        prefix = model_lower.split("/")[0]
+        spec = find_by_name(prefix)
+        if spec and not (spec.is_gateway or spec.is_local):
+            return spec
+
+    # 2. Standard keyword matching
     for spec in PROVIDERS:
         if spec.is_gateway or spec.is_local:
             continue

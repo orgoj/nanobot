@@ -17,8 +17,9 @@
     }
   },
   "providers": {
-    "zai": {
-      "api_key": "YOUR_Z_AI_API_KEY"
+    "zhipu": {
+      "api_key": "YOUR_ZHIPU_OR_Z_AI_API_KEY",
+      "api_base": "https://api.z.ai/api/coding/paas/v4"
     }
   },
   "tools": {

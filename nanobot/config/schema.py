@@ -212,7 +212,6 @@ class ProvidersConfig(BaseModel):
     openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
     deepseek: ProviderConfig = Field(default_factory=ProviderConfig)
     groq: ProviderConfig = Field(default_factory=ProviderConfig)
-    zai: ProviderConfig = Field(default_factory=ProviderConfig)  # Z.AI Coding Plan
     zhipu: ProviderConfig = Field(default_factory=ProviderConfig)
     dashscope: ProviderConfig = Field(default_factory=ProviderConfig)  # 阿里云通义千问
     vllm: ProviderConfig = Field(default_factory=ProviderConfig)
@@ -274,11 +273,20 @@ class Config(BaseSettings):
         self, model: str | None = None
     ) -> tuple["ProviderConfig | None", str | None]:
         """Match provider config and its registry name. Returns (config, spec_name)."""
-        from nanobot.providers.registry import PROVIDERS
+        from nanobot.providers.registry import PROVIDERS, find_by_name
 
         model_lower = (model or self.agents.defaults.model).lower()
 
-        # Match by keyword (order follows PROVIDERS registry)
+        # 1. Match by explicit prefix: "zhipu/glm-4" -> force zhipu config
+        if "/" in model_lower:
+            prefix = model_lower.split("/")[0]
+            spec = find_by_name(prefix)
+            if spec:
+                p = getattr(self.providers, spec.name, None)
+                if p and p.api_key:
+                    return p, spec.name
+
+        # 2. Match by keyword (order follows PROVIDERS registry)
         for spec in PROVIDERS:
             p = getattr(self.providers, spec.name, None)
             if p and any(kw in model_lower for kw in spec.keywords) and p.api_key:
