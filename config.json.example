@@ -27,5 +27,9 @@
     "exec": {
       "timeout": 60
     }
+  },
+  "logging": {
+    "fileLoggingEnabled": true,
+    "fileLogPath": "/home/nanobot/workspace/logs/nanobot.log"
   }
 }

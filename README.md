@@ -658,6 +658,25 @@ That's it! Environment variables, model prefixing, config matching, and `nanobot
 | `tools.restrict_to_workspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
 | `channels.*.allowFrom` | `[]` (allow all) | Whitelist of user IDs. Empty = allow everyone; non-empty = only listed users can interact. |
 
+### Logging & Observability
+
+To enable persistent file logging (useful for Docker deployments), add the following to your `config.json`:
+
+```json
+{
+  "logging": {
+    "fileLoggingEnabled": true,
+    "fileLogPath": "/path/to/your/nanobot.log"
+  }
+}
+```
+
+- **Log Path**: Defaults to `{workspace}/logs/nanobot.log` if `fileLogPath` is not specified.
+- **Rotation**: On every startup, the existing log file is renamed to `filename.YYYYMMDD-HHMMSS.log` based on its last modification time.
+- **Output**:
+    - **File**: `DEBUG` level (everything).
+    - **Docker/Stderr**: `ERROR` level only (to keep `docker logs` clean).
+
 
 ## CLI Reference
 
