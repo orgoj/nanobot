@@ -22,15 +22,19 @@ RUN mkdir -p nanobot bridge && touch nanobot/__init__.py && \
     uv pip install --system --no-cache . && \
     rm -rf nanobot bridge
 
-# Copy the full source and install
-COPY --chown=nanobot:nanobot nanobot/ nanobot/
-COPY --chown=nanobot:nanobot bridge/ bridge/
-RUN uv pip install --system --no-cache .
-
-# Build the WhatsApp bridge
+# Build the WhatsApp bridge (Node.js part)
+# We do this before copying the main Python source to keep it cached
+COPY --chown=nanobot:nanobot bridge/package*.json ./bridge/
 WORKDIR /home/nanobot/app/bridge
-RUN npm install && npm run build
+RUN npm install
+COPY --chown=nanobot:nanobot bridge/ ./
+RUN npm run build
 WORKDIR /home/nanobot/app
+
+# Copy the full Python source and install
+# This is the layer that will change most frequently
+COPY --chown=nanobot:nanobot nanobot/ nanobot/
+RUN uv pip install --system --no-cache .
 
 # Create config directory and set permissions
 RUN mkdir -p /home/nanobot/.nanobot && chown -R nanobot:nanobot /home/nanobot/.nanobot
