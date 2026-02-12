@@ -36,7 +36,9 @@ class FeishuConfig(BaseModel):
     allow_from: list[str] = Field(default_factory=list)  # Allowed user open_ids
     render_markdown: bool = True  # Render markdown as rich text (post format)
     reaction_emoji: str = "THUMBSUP"  # Emoji reaction on received messages (e.g. THUMBSUP, OK, DONE, OnIt, HEART; empty to disable). Full list: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-reaction/emojis-introduce
-    streaming: bool = True  # Enable streaming output with CardKit (requires cardkit:card:write permission)
+    streaming: bool = (
+        True  # Enable streaming output with CardKit (requires cardkit:card:write permission)
+    )
 
 
 class DingTalkConfig(BaseModel):
@@ -272,11 +274,14 @@ class ToolsConfig(BaseModel):
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
 
+
 class ContextConfig(BaseModel):
     """Context configuration."""
+
     context_plugin_package: str = "nanobot.agent.context"
     context_plugin_class: str = "ContextBuilder"
     context_plugin_config: dict[str, str] | None = None
+
 
 class LoggingConfig(BaseModel):
     """Logging configuration."""
@@ -313,20 +318,22 @@ class Config(BaseSettings):
     @property
     def workspace_path(self) -> Path:
         """Get expanded workspace path."""
-    @property
-    def workspace_path(self) -> Path:
-        """Get expanded workspace path."""
         from nanobot.utils.helpers import get_root_path
+
         configured = Path(self.agents.defaults.workspace).expanduser()
         root = get_root_path()
 
         # If workspace is the default and a custom root is set, use the custom root
-        if str(root) != str(Path.home()) and str(configured) == str(Path.home() / ".nanobot" / "workspace"):
+        if str(root) != str(Path.home()) and str(configured) == str(
+            Path.home() / ".nanobot" / "workspace"
+        ):
             return root / ".nanobot" / "workspace"
 
         return configured
-    
-    def _match_provider(self, model: str | None = None) -> tuple["ProviderConfig | None", str | None]:
+
+    def _match_provider(
+        self, model: str | None = None
+    ) -> tuple["ProviderConfig | None", str | None]:
         """Match provider config and its registry name. Returns (config, spec_name)."""
         from nanobot.providers.registry import PROVIDERS, find_by_name
 

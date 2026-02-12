@@ -1,9 +1,8 @@
 """Factory for creating context builder instances with plugin support."""
 
 import importlib
-import sys
 from pathlib import Path
-from typing import Any, Type, Protocol, runtime_checkable
+from typing import Any, Protocol, Type, runtime_checkable
 
 
 @runtime_checkable
@@ -95,6 +94,7 @@ class ContextBuilderProtocol(Protocol):
             Updated message list.
         """
         ...
+
 
 class ContextBuilderFactory:
     """Factory for creating context builder instances with plugin support."""

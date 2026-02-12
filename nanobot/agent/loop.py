@@ -5,10 +5,10 @@ import inspect
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import Config, ExecToolConfig
+    from nanobot.config.schema import Config, ContextConfig, ExecToolConfig
     from nanobot.cron.service import CronService
 
 from loguru import logger
@@ -29,6 +29,7 @@ from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider, LLMResponse
 from nanobot.session.manager import SessionManager
+
 
 class AgentLoop:
     """
@@ -58,7 +59,8 @@ class AgentLoop:
         config: "Config | None" = None,
         context_config: "ContextConfig | None" = None,
     ):
-        from nanobot.config.schema import Config, ContextConfig, ExecToolConfig
+        from nanobot.config.schema import Config, ExecToolConfig
+
         self.bus = bus
         self.provider = provider
         self.workspace = workspace
@@ -72,7 +74,10 @@ class AgentLoop:
         context_config = context_config or self.config.context
 
         # Initialize context builder
-        if context_config and (context_config.context_plugin_package != "nanobot.agent.context" or context_config.context_plugin_class != "ContextBuilder"):
+        if context_config and (
+            context_config.context_plugin_package != "nanobot.agent.context"
+            or context_config.context_plugin_class != "ContextBuilder"
+        ):
             self.context = ContextBuilderFactory.create(
                 workspace=workspace,
                 context_provider_package=context_config.context_plugin_package,
@@ -80,7 +85,11 @@ class AgentLoop:
                 plugin_config=context_config.context_plugin_config,
             )
         else:
-            self.context = ContextBuilder(workspace, memory_config=self.config.memory, features_config=self.config.agents.defaults.features)
+            self.context = ContextBuilder(
+                workspace,
+                memory_config=self.config.memory,
+                features_config=self.config.agents.defaults.features,
+            )
 
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
@@ -203,10 +212,7 @@ class AgentLoop:
         except (TypeError, ValueError):
             return build_messages(**kwargs)
 
-        if any(
-            param.kind == inspect.Parameter.VAR_KEYWORD
-            for param in sig.parameters.values()
-        ):
+        if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values()):
             return build_messages(**kwargs)
 
         filtered = {key: value for key, value in kwargs.items() if key in sig.parameters}
@@ -214,7 +220,7 @@ class AgentLoop:
 
     def _needs_continuation(self, content: str, finish_reason: str | None = None) -> bool:
         """Detect if a response indicates the agent wants to continue working.
-        
+
         This is triggered by token limit truncation or continuation language.
         """
         if finish_reason == "length":
@@ -226,8 +232,14 @@ class AgentLoop:
         # Check for continuation phrases in the last 200 characters
         tail = content[-200:].lower()
         continuation_phrases = [
-            "let me check", "i will now", "next, i'll", "i'll continue",
-            "searching for", "working on", "fetching the rest", "continuing"
+            "let me check",
+            "i will now",
+            "next, i'll",
+            "i'll continue",
+            "searching for",
+            "working on",
+            "fetching the rest",
+            "continuing",
         ]
         return any(phrase in tail for phrase in continuation_phrases)
 
@@ -235,12 +247,18 @@ class AgentLoop:
         """Detect if the agent claims to have taken actions without calling tools."""
         content_lower = content.lower()
         action_claims = [
-            "i've created", "i have created",
-            "i've modified", "i have modified",
-            "i've updated", "i have updated",
-            "i've deleted", "i have deleted",
-            "i've written", "i have written",
-            "i've saved", "i have saved"
+            "i've created",
+            "i have created",
+            "i've modified",
+            "i have modified",
+            "i've updated",
+            "i have updated",
+            "i've deleted",
+            "i have deleted",
+            "i've written",
+            "i have written",
+            "i've saved",
+            "i have saved",
         ]
         return any(claim in content_lower for claim in action_claims)
 
@@ -343,13 +361,17 @@ class AgentLoop:
             # Handle tool calls
             if response.has_tool_calls:
                 # Loop detection
-                current_hashes = [tool_call_hash(tc.name, tc.arguments) for tc in response.tool_calls]
+                current_hashes = [
+                    tool_call_hash(tc.name, tc.arguments) for tc in response.tool_calls
+                ]
                 if all(h in seen_tool_hashes for h in current_hashes):
                     logger.warning("Infinite loop detected: agent repeating same tool calls")
-                    messages.append({
-                        "role": "user", 
-                        "content": "ERROR: You are repeating the same tool calls with the same arguments. This is an infinite loop. Please try a different approach or explain why you are stuck."
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "ERROR: You are repeating the same tool calls with the same arguments. This is an infinite loop. Please try a different approach or explain why you are stuck.",
+                        }
+                    )
                     continue
                 for h in current_hashes:
                     seen_tool_hashes.add(h)
@@ -392,36 +414,31 @@ class AgentLoop:
                         result = f"Error executing {tc.name}: {res}"
                     else:
                         tc, result = res
-                    
-                    messages = self.context.add_tool_result(
-                        messages, tc.id, tc.name, result
-                    )
+
+                    messages = self.context.add_tool_result(messages, tc.id, tc.name, result)
                     # Save tool result to session
-                    session.add_message(
-                        "tool", 
-                        result, 
-                        tool_call_id=tc.id, 
-                        name=tc.name
-                    )
+                    session.add_message("tool", result, tool_call_id=tc.id, name=tc.name)
             else:
                 # No tool calls, check if truly final or needs continuation
                 if (
-                    iteration < self.max_iterations 
-                    and response.content 
-                    and self._needs_continuation(response.content, getattr(response, "finish_reason", None))
+                    iteration < self.max_iterations
+                    and response.content
+                    and self._needs_continuation(
+                        response.content, getattr(response, "finish_reason", None)
+                    )
                 ):
                     logger.info("Auto-continuation triggered")
                     # Send what we have so far if it's a long thought
                     if response.content and not stream_callback:
-                         await self.bus.publish_outbound(
+                        await self.bus.publish_outbound(
                             OutboundMessage(
                                 channel=msg.channel,
                                 chat_id=msg.chat_id,
                                 content=response.content,
-                                metadata=msg.metadata or {}
+                                metadata=msg.metadata or {},
                             )
                         )
-                    
+
                     messages = self.context.add_assistant_message(
                         messages, response.content, reasoning_content=response.reasoning_content
                     )
@@ -430,19 +447,23 @@ class AgentLoop:
 
                 # Action verification: did the agent claim actions without tool calls?
                 if (
-                    response.content 
-                    and tools_called == 0 
+                    response.content
+                    and tools_called == 0
                     and self._contains_unverified_actions(response.content)
                     and iteration < self.max_iterations
                 ):
-                    logger.warning("Action claim detected without tool calls, prompting for tool use")
+                    logger.warning(
+                        "Action claim detected without tool calls, prompting for tool use"
+                    )
                     messages = self.context.add_assistant_message(
                         messages, response.content, reasoning_content=response.reasoning_content
                     )
-                    messages.append({
-                        "role": "user", 
-                        "content": "You said you performed an action, but you didn't call any tools. Please call the appropriate tool to actually perform the action."
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "You said you performed an action, but you didn't call any tools. Please call the appropriate tool to actually perform the action.",
+                        }
+                    )
                     continue
 
                 final_content = response.content
@@ -561,10 +582,7 @@ class AgentLoop:
                     )
                     # Save tool result to session
                     session.add_message(
-                        "tool", 
-                        result, 
-                        tool_call_id=tool_call.id, 
-                        name=tool_call.name
+                        "tool", result, tool_call_id=tool_call.id, name=tool_call.name
                     )
             else:
                 final_content = response.content
@@ -576,7 +594,7 @@ class AgentLoop:
         # Save to session (mark as system message in history)
         session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
         # Preserve reasoning_content for reasoning models
-        reasoning_content = getattr(response, 'reasoning_content', None)
+        reasoning_content = getattr(response, "reasoning_content", None)
         session.add_message("assistant", final_content, reasoning_content=reasoning_content)
         self.sessions.save(session)
 

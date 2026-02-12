@@ -1,7 +1,7 @@
 import inspect
+from pathlib import Path
 
 from nanobot.channels.feishu import FeishuChannel
-from pathlib import Path
 
 
 def test_extract_explicit_attachments() -> None:

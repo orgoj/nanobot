@@ -1,6 +1,8 @@
-import requests
 import json
 import sys
+
+import requests
+
 
 def get_btc_price():
     url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd,eur"
@@ -11,6 +13,7 @@ def get_btc_price():
     except Exception as e:
         return {"error": str(e)}
 
+
 def get_fear_greed():
     url = "https://api.alternative.me/fng/?limit=1"
     try:
@@ -20,9 +23,10 @@ def get_fear_greed():
     except Exception as e:
         return {"error": str(e)}
 
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "price"
-    
+
     if cmd == "price":
         print(json.dumps(get_btc_price()))
     elif cmd == "fng":

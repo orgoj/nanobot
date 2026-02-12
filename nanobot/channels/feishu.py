@@ -17,8 +17,8 @@ from loguru import logger
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
-from nanobot.config.schema import FeishuConfig
 from nanobot.channels.feishu_markdown import FeishuMarkdownConverter, should_render_markdown
+from nanobot.config.schema import FeishuConfig
 
 try:
     import lark_oapi as lark
@@ -36,10 +36,10 @@ try:
         CreateMessageRequest,
         CreateMessageRequestBody,
         Emoji,
-        P2ImMessageReceiveV1,
         P2ImChatAccessEventBotP2pChatEnteredV1,
         P2ImMessageMessageReadV1,
         P2ImMessageReactionCreatedV1,
+        P2ImMessageReceiveV1,
     )
 
     FEISHU_AVAILABLE = True
@@ -530,6 +530,7 @@ class FeishuChannel(BaseChannel):
 
             # Create media directory
             from nanobot.utils.helpers import get_data_path
+
             media_dir = get_data_path() / "media"
             media_dir.mkdir(parents=True, exist_ok=True)
 
@@ -553,7 +554,9 @@ class FeishuChannel(BaseChannel):
             logger.error(f"Failed to download {media_type}: {e}")
             return None
 
-    async def _fetch_file_content(self, message_id: str, file_key: str, media_type: str) -> bytes | None:
+    async def _fetch_file_content(
+        self, message_id: str, file_key: str, media_type: str
+    ) -> bytes | None:
         """
         Fetch file content from Feishu API.
 
@@ -565,10 +568,7 @@ class FeishuChannel(BaseChannel):
         try:
             # Get tenant access token via HTTP API
             token_url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
-            token_payload = {
-                "app_id": self.config.app_id,
-                "app_secret": self.config.app_secret
-            }
+            token_payload = {"app_id": self.config.app_id, "app_secret": self.config.app_secret}
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 token_response = await client.post(token_url, json=token_payload)
@@ -595,15 +595,19 @@ class FeishuChannel(BaseChannel):
                     headers={
                         "Authorization": f"Bearer {access_token}",
                     },
-                    params={"type": media_type}
+                    params={"type": media_type},
                 )
 
                 logger.debug(f"Fetch file response: status={response.status_code}")
                 logger.debug(f"Response headers: {dict(response.headers)}")
-                logger.debug(f"Response content-type: {response.headers.get('Content-Type', 'unknown')}")
+                logger.debug(
+                    f"Response content-type: {response.headers.get('Content-Type', 'unknown')}"
+                )
 
                 if response.status_code != 200:
-                    logger.warning(f"HTTP error: status={response.status_code}, response={response.text[:500]}")
+                    logger.warning(
+                        f"HTTP error: status={response.status_code}, response={response.text[:500]}"
+                    )
                     return None
 
                 # Check if response is JSON (might contain download_url or file data)
@@ -628,11 +632,16 @@ class FeishuChannel(BaseChannel):
                             file_data = data.get("data", {}).get("file", {}).get("content")
                             if file_data:
                                 import base64
+
                                 return base64.b64decode(file_data)
 
-                            logger.error(f"JSON response doesn't contain file content or download_url")
+                            logger.error(
+                                "JSON response doesn't contain file content or download_url"
+                            )
                         else:
-                            logger.error(f"API error: code={data.get('code')}, msg={data.get('msg')}")
+                            logger.error(
+                                f"API error: code={data.get('code')}, msg={data.get('msg')}"
+                            )
                         return None
                     except Exception as json_err:
                         logger.error(f"Failed to parse JSON response: {json_err}")
@@ -656,6 +665,7 @@ class FeishuChannel(BaseChannel):
             "video": ".mp4",
         }
         return ext_map.get(media_type, "")
+
     # Regex to match markdown tables (header + separator + data rows)
     _TABLE_RE = re.compile(
         r"((?:^[ \t]*\|.+\|[ \t]*\n)(?:^[ \t]*\|[-:\s|]+\|[ \t]*\n)(?:^[ \t]*\|.+\|[ \t]*\n?)+)",
@@ -709,15 +719,18 @@ class FeishuChannel(BaseChannel):
         return bool(mime and mime.startswith("image/"))
 
     async def _send_image(self, receive_id_type: str, receive_id: str, image_key: str) -> None:
-        request = CreateMessageRequest.builder() \
-            .receive_id_type(receive_id_type) \
+        request = (
+            CreateMessageRequest.builder()
+            .receive_id_type(receive_id_type)
             .request_body(
                 CreateMessageRequestBody.builder()
                 .receive_id(receive_id)
                 .msg_type("image")
                 .content(json.dumps({"image_key": image_key}))
                 .build()
-            ).build()
+            )
+            .build()
+        )
         response = self._client.im.v1.message.create(request)
         if not response.success():
             logger.warning(
@@ -726,15 +739,18 @@ class FeishuChannel(BaseChannel):
             )
 
     async def _send_file(self, receive_id_type: str, receive_id: str, file_key: str) -> None:
-        request = CreateMessageRequest.builder() \
-            .receive_id_type(receive_id_type) \
+        request = (
+            CreateMessageRequest.builder()
+            .receive_id_type(receive_id_type)
             .request_body(
                 CreateMessageRequestBody.builder()
                 .receive_id(receive_id)
                 .msg_type("file")
                 .content(json.dumps({"file_key": file_key}))
                 .build()
-            ).build()
+            )
+            .build()
+        )
         response = self._client.im.v1.message.create(request)
         if not response.success():
             logger.warning(
@@ -787,15 +803,18 @@ class FeishuChannel(BaseChannel):
                         post_content = self._markdown_converter.convert(cleaned_text)
                         content = json.dumps(post_content)
 
-                request = CreateMessageRequest.builder() \
-                    .receive_id_type(receive_id_type) \
+                request = (
+                    CreateMessageRequest.builder()
+                    .receive_id_type(receive_id_type)
                     .request_body(
                         CreateMessageRequestBody.builder()
                         .receive_id(msg.chat_id)
                         .msg_type(msg_type)
                         .content(content)
                         .build()
-                    ).build()
+                    )
+                    .build()
+                )
 
                 response = self._client.im.v1.message.create(request)
 
@@ -861,7 +880,11 @@ class FeishuChannel(BaseChannel):
         """
         try:
             event = data.event
-            reader_id = event.reader.reader_id.open_id if event.reader and event.reader.reader_id else "unknown"
+            reader_id = (
+                event.reader.reader_id.open_id
+                if event.reader and event.reader.reader_id
+                else "unknown"
+            )
             logger.debug(f"User {reader_id} read messages: {event.message_id_list}")
         except Exception as e:
             logger.debug(f"Error handling message read event: {e}")
@@ -920,14 +943,14 @@ class FeishuChannel(BaseChannel):
                     else:
                         file_key = content_json.get("file_key")
 
-                    logger.info(f"Processing {msg_type}: file_key={file_key}, message_id={message_id}")
+                    logger.info(
+                        f"Processing {msg_type}: file_key={file_key}, message_id={message_id}"
+                    )
 
                     if file_key:
                         # Download the file
                         local_path = await self._download_media(
-                            message_id=message_id,
-                            file_key=file_key,
-                            media_type=msg_type
+                            message_id=message_id, file_key=file_key, media_type=msg_type
                         )
 
                         if local_path:

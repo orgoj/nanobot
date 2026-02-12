@@ -140,18 +140,13 @@ def version_callback(value: bool):
 
 @app.callback()
 def main(
-@app.callback()
-def main(
-    root: str = typer.Option(
-        None, "--root", help="Custom root directory for nanobot data"
-    ),
-    version: bool = typer.Option(
-        None, "--version", "-v", callback=version_callback, is_eager=True
-    ),
+    root: str = typer.Option(None, "--root", help="Custom root directory for nanobot data"),
+    version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True),
 ):
     """nanobot - Personal AI Assistant."""
     if root:
         from nanobot.utils.helpers import set_root_path
+
         set_root_path(root)
 
 
@@ -181,7 +176,7 @@ def onboard():
     config.memory.max_long_term_lines = 100
     config.memory.max_daily_lines = 200
     config.memory.include_recent_days = 5
-    
+
     save_config(config)
     console.print(f"[green]✓[/green] Created config at {config_path}")
 
@@ -265,7 +260,8 @@ Information about the user goes here.
     memory_dir.mkdir(exist_ok=True)
     memory_file = memory_dir / "MEMORY.md"
     if not memory_file.exists():
-        memory_file.write_text("""# Long-term Memory
+        memory_file.write_text(
+            """# Long-term Memory
 
 This file stores important information that should persist across sessions.
 
@@ -280,7 +276,8 @@ This file stores important information that should persist across sessions.
 ## Important Notes
 
 (Things to remember)
-""")
+"""
+        )
         console.print("  [dim]Created memory/MEMORY.md[/dim]")
 
     # Create skills directory for custom user skills
@@ -318,11 +315,8 @@ def gateway(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
     """Start the nanobot gateway."""
-<<<<<<< HEAD
     from loguru import logger
 
-=======
->>>>>>> bot2046/main
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.channels.manager import ChannelManager
@@ -339,6 +333,7 @@ def gateway(
         logging.basicConfig(level=logging.DEBUG)
 
     from nanobot.utils.helpers import get_root_path
+
     root_dir = get_root_path()
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
     console.print(f"[dim]Root: {root_dir}[/dim]")
@@ -615,29 +610,23 @@ def channels_status():
         feishu_config = f"app_id: {feishu.app_id[:10]}..."
     else:
         feishu_config = "[dim]not configured[/dim]"
-    table.add_row(
-        "Feishu",
-        "✓" if feishu.enabled else "✗",
-        feishu_config
-    )
+    table.add_row("Feishu", "✓" if feishu.enabled else "✗", feishu_config)
 
     # DingTalk
     dingtalk = config.channels.dingtalk
-    dingtalk_config = "configured" if dingtalk.client_id and dingtalk.client_secret else "[dim]not configured[/dim]"
-    table.add_row(
-        "DingTalk",
-        "✓" if dingtalk.enabled else "✗",
-        dingtalk_config
+    dingtalk_config = (
+        "configured"
+        if dingtalk.client_id and dingtalk.client_secret
+        else "[dim]not configured[/dim]"
     )
+    table.add_row("DingTalk", "✓" if dingtalk.enabled else "✗", dingtalk_config)
 
     # Email
     email = config.channels.email
-    email_config = "configured" if email.imap_host and email.smtp_host else "[dim]not configured[/dim]"
-    table.add_row(
-        "Email",
-        "✓" if email.enabled else "✗",
-        email_config
+    email_config = (
+        "configured" if email.imap_host and email.smtp_host else "[dim]not configured[/dim]"
     )
+    table.add_row("Email", "✓" if email.enabled else "✗", email_config)
 
     # Mochat
     mc = config.channels.mochat
@@ -645,20 +634,12 @@ def channels_status():
     # Mochat
     mc = config.channels.mochat
     mc_base = mc.base_url or "[dim]not configured[/dim]"
-    table.add_row(
-        "Mochat",
-        "✓" if mc.enabled else "✗",
-        mc_base
-    )
+    table.add_row("Mochat", "✓" if mc.enabled else "✗", mc_base)
 
     # QQ
     qq = config.channels.qq
     qq_config = "configured" if qq.app_id and qq.secret else "[dim]not configured[/dim]"
-    table.add_row(
-        "QQ",
-        "✓" if qq.enabled else "✗",
-        qq_config
-    )
+    table.add_row("QQ", "✓" if qq.enabled else "✗", qq_config)
 
     console.print(table)
 
@@ -667,6 +648,7 @@ def _get_bridge_dir() -> Path:
     """Get the bridge directory, setting it up if needed."""
     import shutil
     import subprocess
+
     from nanobot.utils.helpers import get_data_path
 
     # User's bridge location

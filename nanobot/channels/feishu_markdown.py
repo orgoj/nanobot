@@ -19,12 +19,7 @@ class FeishuMarkdownConverter:
         tokens = self.md.parse(markdown_text)
         content = self._process_tokens(tokens)
 
-        return {
-            "zh_cn": {
-                "title": "",
-                "content": content
-            }
-        }
+        return {"zh_cn": {"title": "", "content": content}}
 
     def _process_tokens(self, tokens: list[Token]) -> list[list[dict]]:
         """Process markdown tokens into Feishu content format."""
@@ -69,9 +64,6 @@ class FeishuMarkdownConverter:
 
     def _process_heading(self, tokens: list[Token], start_idx: int) -> tuple[int, list[dict]]:
         """Process heading tokens."""
-        heading_open = tokens[start_idx]
-        level = int(heading_open.tag[1])  # h1 -> 1, h2 -> 2, etc.
-
         # Get inline content
         inline_idx = start_idx + 1
         inline_token = tokens[inline_idx]
@@ -88,7 +80,9 @@ class FeishuMarkdownConverter:
 
         return next_idx, elements
 
-    def _process_paragraph(self, tokens: list[Token], start_idx: int) -> tuple[int, list[list[dict]]]:
+    def _process_paragraph(
+        self, tokens: list[Token], start_idx: int
+    ) -> tuple[int, list[list[dict]]]:
         """Process paragraph tokens."""
         inline_idx = start_idx + 1
         inline_token = tokens[inline_idx]
@@ -164,8 +158,9 @@ class FeishuMarkdownConverter:
 
         return elements if elements else [{"tag": "text", "text": ""}]
 
-    def _process_styled(self, children: list[Token], start_idx: int,
-                       tag_type: str, styles: list[str]) -> tuple[int, dict]:
+    def _process_styled(
+        self, children: list[Token], start_idx: int, tag_type: str, styles: list[str]
+    ) -> tuple[int, dict]:
         """Process styled text (bold, italic, strikethrough)."""
         text_parts = []
         i = start_idx + 1
@@ -201,8 +196,9 @@ class FeishuMarkdownConverter:
 
         return i + 1, elem  # +1 to skip close tag
 
-    def _process_list(self, tokens: list[Token], start_idx: int,
-                     ordered: bool = False) -> tuple[int, list[list[dict]]]:
+    def _process_list(
+        self, tokens: list[Token], start_idx: int, ordered: bool = False
+    ) -> tuple[int, list[list[dict]]]:
         """Process list (ordered or unordered)."""
         lines = []
         i = start_idx + 1
@@ -221,8 +217,9 @@ class FeishuMarkdownConverter:
 
         return i + 1, lines  # +1 to skip close tag
 
-    def _process_list_item(self, tokens: list[Token], start_idx: int,
-                          ordered: bool, item_num: int) -> tuple[int, list[list[dict]]]:
+    def _process_list_item(
+        self, tokens: list[Token], start_idx: int, ordered: bool, item_num: int
+    ) -> tuple[int, list[list[dict]]]:
         """Process a single list item."""
         i = start_idx + 1
         item_content = []
@@ -262,16 +259,16 @@ def should_render_markdown(text: str) -> bool:
     """
     markdown_indicators = [
         "```",  # code blocks
-        "**",   # bold
-        "__",   # bold
-        "*",    # italic/bold
-        "_",    # italic
-        "[",    # links
-        "#",    # headings
-        "-",    # lists
-        "1.",   # ordered lists
-        ">",    # blockquotes
-        "`",    # inline code
+        "**",  # bold
+        "__",  # bold
+        "*",  # italic/bold
+        "_",  # italic
+        "[",  # links
+        "#",  # headings
+        "-",  # lists
+        "1.",  # ordered lists
+        ">",  # blockquotes
+        "`",  # inline code
     ]
 
     return any(indicator in text for indicator in markdown_indicators)

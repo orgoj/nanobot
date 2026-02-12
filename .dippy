@@ -2,6 +2,11 @@ allow git *
 
 allow ruff *
 
+allow uv run pre-commit run *
+
+deny python* -m compileall * "USE: uv run python -m compileall"
+allow uv run python -m compileall *
+
 allow-read /home/michael/work/nanobot/**
 allow-edit /home/michael/work/nanobot/**
 allow-redirect nanobot/**

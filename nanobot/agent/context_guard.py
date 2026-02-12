@@ -1,14 +1,16 @@
 import json
 import logging
-from typing import Any, List, Dict, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+
 
 class TokenCounter:
     """
     Helper to estimate token usage.
     Tries to use tiktoken if available, otherwise falls back to char estimation.
     """
+
     _encoding = None
 
     @classmethod
@@ -16,6 +18,7 @@ class TokenCounter:
         if cls._encoding is None:
             try:
                 import tiktoken
+
                 cls._encoding = tiktoken.get_encoding("cl100k_base")
             except ImportError:
                 cls._encoding = False
@@ -57,14 +60,15 @@ class TokenCounter:
             # Rough fallback
             return cls.count_text(json.dumps(messages))
 
+
 class ContextGuard:
     """
     Guards the context window size to prevent LLM errors.
     """
-    
+
     # Default safe limit (can be overridden by model config)
-    DEFAULT_LIMIT = 8192 
-    
+    DEFAULT_LIMIT = 8192
+
     # Trigger compaction when usage > limit * threshold
     THRESHOLD = 0.85
 
@@ -81,7 +85,7 @@ class ContextGuard:
         "claude-3-haiku-20240307": 200000,
         "claude-3-5-sonnet-20240620": 200000,
         # Gemini
-        "gemini-1.5-pro": 1000000, # Technically 1M or 2M
+        "gemini-1.5-pro": 1000000,  # Technically 1M or 2M
         "gemini-1.5-flash": 1000000,
         "gemini-pro": 30720,
         # DeepSeek
@@ -90,7 +94,7 @@ class ContextGuard:
         # Gemini 2/3
         "gemini-3": 128000,
         "gemini-2": 1000000,
-        "gemini": 32768, # Default fallback for older gemini
+        "gemini": 32768,  # Default fallback for older gemini
     }
 
     def __init__(self, limit: int | None = None, model: str | None = None):
@@ -113,16 +117,18 @@ class ContextGuard:
         usage = TokenCounter.count_messages(messages)
         is_safe = usage < self.limit
         should_compact = usage > (self.limit * self.THRESHOLD)
-        
+
         return {
             "usage": usage,
             "limit": self.limit,
             "is_safe": is_safe,
             "should_compact": should_compact,
-            "utilization": usage / self.limit
+            "utilization": usage / self.limit,
         }
 
-    def prune_old_messages(self, messages: List[Dict[str, Any]], keep_last: int = 10) -> List[Dict[str, Any]]:
+    def prune_old_messages(
+        self, messages: List[Dict[str, Any]], keep_last: int = 10
+    ) -> List[Dict[str, Any]]:
         """
         Simple pruning strategy: keep system/bootstrap, summarize middle?
         For now: just return the slice to prompt the summarizer.
@@ -130,10 +136,10 @@ class ContextGuard:
         # Identify system messages (usually at start)
         system_msgs = [m for m in messages if m.get("role") == "system"]
         chat_msgs = [m for m in messages if m.get("role") != "system"]
-        
+
         if len(chat_msgs) <= keep_last:
             return messages
-            
+
         # We need to prune `chat_msgs`
         # But we can't just drop them, we need to summarize them.
         # This function just helps identify WHAT to prune.
