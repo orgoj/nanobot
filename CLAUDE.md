@@ -18,38 +18,71 @@
 
 nanobot is an ultra-lightweight AI agent framework.
 
-- **Core Agent**: `nanobot/agent/`
-- **Channels**: `nanobot/channels/`
-- **Tools**: `nanobot/agent/tools/`
-- **Config**: `nanobot/config/`
-- **CLI**: `nanobot/cli/`
+- **Core Agent**: `{nanobot}/agent/`
+- **Channels**: `{nanobot}/channels/`
+- **Tools**: `{nanobot}/agent/tools/`
+- **Config**: `{nanobot}/config/`
+- **CLI**: `{nanobot}/cli/`
+- **Providers**: `{nanobot}/providers/` (via LiteLLM)
+- **Skills**: `{nanobot}/skills/`
+- **Cron**: `{nanobot}/cron/`
+- **Session**: `{nanobot}/session/`
 - **Logs**: `{workspace}/logs/nanobot.log` (when enabled)
+
+Directory "./instance" contains symlinks to docker container workspaces for analysis.
 
 ## Build & Run Commands
 
-### Docker (Recommended for Testing)
+### Docker (Recommended)
 ```bash
 # Build
 docker build -t nanobot .
 
-# Run Gateway
-docker run -v ~/.nanobot:/home/nanobot/.nanobot -p 18790:18790 nanobot gateway
+# Run Gateway (detached with restart) - use helper script
+./run-docker.sh
 
-# Run Status
-docker run -v ~/.nanobot:/home/nanobot/.nanobot --rm nanobot status
+# Or manually:
+docker run -d --name nanobot \
+  -v ~/work/nanobot/.nanobot:/home/nanobot/.nanobot \
+  -v ~/work/nanobot/workspace:/home/nanobot/workspace \
+  --restart unless-stopped \
+  -p 18790:18790 nanobot gateway
+
+# Helper scripts
+./start-docker.sh    # Start existing container
+./stop-docker.sh     # Stop container
+./restart-docker.sh  # Restart container
 ```
 
 ### Local Development (DANGER: Read Safety Guidelines)
 ```bash
-# Install in editable mode
-pip install -e .
+# Run isolated tests ONLY - safe, does not touch ~/.nanobot/
+uv run pytest tests/
 
-# Verify core agent lines
+# Verify core agent lines (< 4000 goal)
 bash core_agent_lines.sh
 ```
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `nanobot onboard` | Initialize config & workspace |
+| `nanobot status` | Show configuration status |
+| `nanobot agent` | Interactive chat mode |
+| `nanobot agent -m "Hello"` | Single message mode |
+| `nanobot gateway` | Start server (all channels) |
+| `nanobot channels status` | Show channel configs |
+| `nanobot channels login` | Link WhatsApp via QR |
+| `nanobot cron list` | List scheduled jobs |
+| `nanobot cron add -n "name" -m "msg" --every 3600` | Add job (every hour) |
+| `nanobot cron remove <id>` | Remove job |
+| `nanobot cron run <id>` | Run job manually |
 
 ## Coding Style
 - Follow PEP 8
 - Use type hints
 - Keep core logic concise (the project goal is < 4000 lines)
 - New providers should be added via `nanobot/providers/registry.py`
+- Use `uv` for dependency management (pyproject.toml)
+- Run `ruff` for linting: `uv run ruff check nanobot/`

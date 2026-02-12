@@ -35,7 +35,7 @@ mkdir -p ~/work/nanobot/workspace
 echo "🚀 Spouštím nanobot kontejner..."
 docker run -d \
   --name "$CONTAINER_NAME" \
-  -v ~/.nanobot:/home/nanobot/.nanobot \
+  -v ~/work/nanobot/.nanobot:/home/nanobot/.nanobot \
   -v ~/work/nanobot/workspace:/home/nanobot/workspace \
   --restart unless-stopped \
   "$IMAGE_NAME"
