@@ -31,14 +31,16 @@ class TelegramChannel(BaseChannel):
     - Typing indicators
     """
 
+    name = "telegram"
+
     def __init__(
         self,
         config: "TelegramConfig",
         bus: MessageBus,
         session_manager: "SessionManager | None" = None,
     ):
-        super().__init__("telegram", bus, session_manager)
-        self.config = config
+        super().__init__(config, bus)
+        self.session_manager = session_manager
         self._app: Application | None = None
         self._running = False
         self._typing_tasks: dict[int, asyncio.Task] = {}
@@ -178,7 +180,7 @@ class TelegramChannel(BaseChannel):
             )
 
         # Route to bus
-        await self.publish_inbound(
+        await self._handle_message(
             content=content,
             chat_id=str(chat_id),
             sender_id=str(user.id),
@@ -193,7 +195,7 @@ class TelegramChannel(BaseChannel):
         # Start typing indicator
         self._start_typing(chat_id)
 
-    async def handle_outbound(self, msg: OutboundMessage) -> None:
+    async def send(self, msg: OutboundMessage) -> None:
         """Handle outbound messages from the bus."""
         if not self._app or not self._running:
             return
