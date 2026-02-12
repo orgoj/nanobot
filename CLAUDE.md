@@ -29,7 +29,31 @@ nanobot is an ultra-lightweight AI agent framework.
 - **Session**: `{nanobot}/session/`
 - **Logs**: `{workspace}/logs/nanobot.log` (when enabled)
 
-Directory "./instance" contains symlinks to docker container workspaces for analysis.
+## Instance Directory
+
+The `./instance/` directory contains symlinks to the Docker container's config and workspace:
+
+```
+instance/
+├── .nanobot -> /path/to/actual/config    # Symlink to config directory
+└── workspace -> /path/to/actual/workspace # Symlink to workspace
+```
+
+**How it works:**
+- `run-docker.sh` uses `readlink -f` to resolve symlinks to absolute paths
+- Docker mounts the resolved paths into the container
+- This allows each developer to point to their own config/workspace locations
+- To set up: create symlinks pointing to your actual directories
+
+**Setup example:**
+```bash
+# Remove existing symlinks if any
+rm -rf instance/.nanobot instance/workspace
+
+# Create symlinks to your locations
+ln -s ~/work/nanobot/.nanobot instance/.nanobot
+ln -s ~/work/nanobot/workspace instance/workspace
+```
 
 ## Build & Run Commands
 
@@ -38,21 +62,16 @@ Directory "./instance" contains symlinks to docker container workspaces for anal
 # Build
 docker build -t nanobot .
 
-# Run Gateway (detached with restart) - use helper script
+# Run Gateway (uses instance/ symlinks)
 ./run-docker.sh
-
-# Or manually:
-docker run -d --name nanobot \
-  -v ~/work/nanobot/.nanobot:/home/nanobot/.nanobot \
-  -v ~/work/nanobot/workspace:/home/nanobot/workspace \
-  --restart unless-stopped \
-  -p 18790:18790 nanobot gateway
 
 # Helper scripts
 ./start-docker.sh    # Start existing container
 ./stop-docker.sh     # Stop container
 ./restart-docker.sh  # Restart container
 ```
+
+**See [DOCKER.md](DOCKER.md) for detailed information about the Docker image structure, container layout, and common operations.**
 
 ### Local Development (DANGER: Read Safety Guidelines)
 ```bash

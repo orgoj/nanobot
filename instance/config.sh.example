@@ -1,0 +1,12 @@
+# ========================================
+# Instance Configuration
+# ========================================
+# Copy this file to config.sh and customize
+
+# Container settings
+CONTAINER_NAME="nanobot"
+TIMEZONE="Europe/Prague"
+
+# Instance directory (relative to script location)
+# Symlinks inside will be resolved automatically
+INSTANCE_DIR="./instance"

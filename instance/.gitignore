@@ -1,0 +1,10 @@
+# Ignore everything in instance
+/*
+
+# Except these files
+!.gitignore
+!README.md
+!config.sh.example
+
+# But ignore user's config
+/config.sh
