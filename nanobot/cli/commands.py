@@ -351,7 +351,23 @@ def gateway(
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:
         """Execute heartbeat through the agent."""
-        return await agent.process_direct(prompt, session_key="heartbeat")
+        target = config.agents.defaults.heartbeat_target
+        channel, chat_id = "cli", "direct"
+        if ":" in target:
+            channel, chat_id = target.split(":", 1)
+
+        resp = await agent.process_direct(
+            prompt, session_key="heartbeat", channel=channel, chat_id=chat_id
+        )
+
+        # If it responded with text and target is NOT cli, send it to the channel
+        if channel != "cli" and resp and resp != "HEARTBEAT_OK":
+            from nanobot.bus.events import OutboundMessage
+
+            await bus.publish_outbound(
+                OutboundMessage(channel=channel, chat_id=chat_id, content=resp)
+            )
+        return resp
 
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
@@ -429,13 +445,23 @@ def gateway(
                 if ":" in target:
                     channel, chat_id = target.split(":", 1)
 
-                asyncio.create_task(
-                    agent.process_direct(
-                        config.agents.defaults.startup_prompt,
-                        channel=channel,
-                        chat_id=chat_id,
-                    )
-                )
+                async def _run_startup():
+                    try:
+                        resp = await agent.process_direct(
+                            config.agents.defaults.startup_prompt,
+                            channel=channel,
+                            chat_id=chat_id,
+                        )
+                        if channel != "cli" and resp:
+                            from nanobot.bus.events import OutboundMessage
+
+                            await bus.publish_outbound(
+                                OutboundMessage(channel=channel, chat_id=chat_id, content=resp)
+                            )
+                    except Exception as e:
+                        logger.error(f"Error in startup prompt: {e}")
+
+                asyncio.create_task(_run_startup())
 
             await asyncio.gather(
                 agent.run(),

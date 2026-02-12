@@ -58,8 +58,21 @@ ln -s ~/work/nanobot/workspace instance/workspace
 ## Build & Run Commands
 
 ### Docker (Recommended)
+
+> [!CRITICAL]
+> **Code changes in host filesystem do NOT affect running container!**
+> 
+> Docker containers run with the code that was baked into the image at build time.
+> 
+> **After ANY code changes, you MUST:**
+> 1. Rebuild: `docker build -t nanobot .`
+> 2. Restart: `./restart-docker.sh` (or stop + run)
+> 
+> **The running container will NEVER see your local code changes until rebuilt.**
+> This includes fixes, new features, config changes - everything requires rebuild.
+
 ```bash
-# Build
+# Build (REQUIRED after any code change)
 docker build -t nanobot .
 
 # Run Gateway (uses instance/ symlinks)
@@ -68,7 +81,7 @@ docker build -t nanobot .
 # Helper scripts
 ./start-docker.sh    # Start existing container
 ./stop-docker.sh     # Stop container
-./restart-docker.sh  # Restart container
+./restart-docker.sh  # Restart container (doesn't rebuild!)
 ```
 
 **See [DOCKER.md](DOCKER.md) for detailed information about the Docker image structure, container layout, and common operations.**

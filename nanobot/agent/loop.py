@@ -324,6 +324,8 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
 
+            # Call LLM
+            logger.debug(f"LLM call (iteration {iteration}/{self.max_iterations})")
             if stream_callback:
                 # Use streaming provider
                 full_content = ""
@@ -357,6 +359,8 @@ class AgentLoop:
                     tools=self.tools.get_definitions(),
                     model=self.model,
                 )
+
+            logger.debug(f"LLM response received (has_tool_calls={response.has_tool_calls})")
 
             # Handle tool calls
             if response.has_tool_calls:
