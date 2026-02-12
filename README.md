@@ -765,6 +765,12 @@ nanobot/
 └── cli/            # 🖥️ Commands
 ```
 
+## 📚 Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - How messaging, prompts, and context work
+- **[DOCKER.md](DOCKER.md)** - Docker deployment guide
+- **[CLAUDE.md](CLAUDE.md)** - Development guidelines
+
 ## 🤝 Contribute & Roadmap
 
 PRs welcome! The codebase is intentionally small and readable. 🤗
