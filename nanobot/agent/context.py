@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import MemoryConfig
+    from nanobot.config.schema import MemoryConfig, AgentFeaturesConfig
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
@@ -24,10 +24,11 @@ class ContextBuilder(ContextBuilderProtocol):
     
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"]
     
-    def __init__(self, workspace: Path, memory_config: "MemoryConfig | None" = None):
+    def __init__(self, workspace: Path, memory_config: "MemoryConfig | None" = None, features_config: "AgentFeaturesConfig | None" = None):
         self.workspace = workspace
         self.memory = MemoryStore(workspace, memory_config=memory_config)
         self.skills = SkillsLoader(workspace)
+        self.features = features_config
     
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """
@@ -43,6 +44,18 @@ class ContextBuilder(ContextBuilderProtocol):
         
         # Core identity
         parts.append(self._get_identity())
+
+        # Conditional Agentic Features
+        if self.features:
+            if self.features.multi_agent:
+                parts.append("""## 🎯 Multi-Agent Architecture
+
+You are the primary coordinator. When a task requires deep strategic reasoning or complex coding, use the `spawn` tool to delegate to specialized models (like DeepSeek-R1 for reasoning or Qwen-Coder for coding).""")
+            
+            if self.features.journaling:
+                parts.append("""## 📝 Accountability & Journaling
+
+**CRITICAL**: Maintain a record of your significant actions and analyses in `workspace/memory/YYYY-MM-DD.md`. Always use tools like `edit_file` or `write_file` to ensure findings are persistent. Do not just say you will do it.""")
         
         # Bootstrap files
         bootstrap = self._load_bootstrap_files()

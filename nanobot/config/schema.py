@@ -178,6 +178,13 @@ class ChannelsConfig(BaseModel):
     qq: QQConfig = Field(default_factory=QQConfig)
 
 
+class AgentFeaturesConfig(BaseModel):
+    """Agentic features configuration."""
+
+    multi_agent: bool = False  # Enable instructions for specialized model delegation
+    journaling: bool = False  # Enable strict journaling requirements
+
+
 class AgentDefaults(BaseModel):
     """Default agent configuration."""
 
@@ -192,6 +199,7 @@ class AgentDefaults(BaseModel):
     heartbeat_on_start: bool = False
     heartbeat_target: str = "cli:direct"
     stream_intermediate_responses: bool = False  # If True, send intermediate thoughts to user
+    features: AgentFeaturesConfig = Field(default_factory=AgentFeaturesConfig)
 
 
 class AgentsConfig(BaseModel):

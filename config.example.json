@@ -11,7 +11,11 @@
       "startup_target": "cli:direct",
       "heartbeat_on_start": false,
       "heartbeat_target": "cli:direct",
-      "stream_intermediate_responses": false
+      "stream_intermediate_responses": false,
+      "features": {
+        "multi_agent": false,
+        "journaling": false
+      }
     }
   },
   "context": {

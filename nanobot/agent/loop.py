@@ -80,7 +80,7 @@ class AgentLoop:
                 plugin_config=context_config.context_plugin_config,
             )
         else:
-            self.context = ContextBuilder(workspace, memory_config=self.config.memory)
+            self.context = ContextBuilder(workspace, memory_config=self.config.memory, features_config=self.config.agents.defaults.features)
 
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
