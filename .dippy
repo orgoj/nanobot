@@ -6,6 +6,8 @@ allow uv run pre-commit run *
 
 deny python* -m compileall * "USE: uv run python -m compileall"
 allow uv run python -m compileall *
+allow uv run python -m pytest *
+allow uv run pytest *
 
 allow-read /home/michael/work/nanobot/**
 allow-edit /home/michael/work/nanobot/**

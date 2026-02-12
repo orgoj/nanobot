@@ -10,7 +10,7 @@ from pathlib import Path
 BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
 
-class SkillsLoader:
+class SkillManager:
     """
     Loader for agent skills.
 
@@ -22,6 +22,10 @@ class SkillsLoader:
         self.workspace = workspace
         self.workspace_skills = workspace / "skills"
         self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
+
+    def get_skills_context(self) -> str:
+        """Get the summary of skills for agent context."""
+        return self.build_skills_summary()
 
     def list_skills(self, filter_unavailable: bool = True) -> list[dict[str, str]]:
         """
