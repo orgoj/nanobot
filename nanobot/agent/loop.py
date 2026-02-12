@@ -22,6 +22,7 @@ from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
+from nanobot.agent.tools.todo import TodoTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
@@ -126,6 +127,9 @@ class AgentLoop:
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
 
+        # TODO tool
+        self.tools.register(TodoTool(self.workspace))
+
         # Cron tool (for scheduling)
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
@@ -207,6 +211,38 @@ class AgentLoop:
         filtered = {key: value for key, value in kwargs.items() if key in sig.parameters}
         return build_messages(**filtered)
 
+    def _needs_continuation(self, content: str, finish_reason: str | None = None) -> bool:
+        """Detect if a response indicates the agent wants to continue working.
+        
+        This is triggered by token limit truncation or continuation language.
+        """
+        if finish_reason == "length":
+            return True
+
+        if not content:
+            return False
+
+        # Check for continuation phrases in the last 200 characters
+        tail = content[-200:].lower()
+        continuation_phrases = [
+            "let me check", "i will now", "next, i'll", "i'll continue",
+            "searching for", "working on", "fetching the rest", "continuing"
+        ]
+        return any(phrase in tail for phrase in continuation_phrases)
+
+    def _contains_unverified_actions(self, content: str) -> bool:
+        """Detect if the agent claims to have taken actions without calling tools."""
+        content_lower = content.lower()
+        action_claims = [
+            "i've created", "i have created",
+            "i've modified", "i have modified",
+            "i've updated", "i have updated",
+            "i've deleted", "i have deleted",
+            "i've written", "i have written",
+            "i've saved", "i have saved"
+        ]
+        return any(claim in content_lower for claim in action_claims)
+
     async def _process_message(
         self, msg: InboundMessage, stream_callback: Callable[[str], Any] | None = None
     ) -> OutboundMessage | None:
@@ -263,6 +299,7 @@ class AgentLoop:
         # Agent loop
         iteration = 0
         final_content = None
+        tools_called = 0
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -303,6 +340,7 @@ class AgentLoop:
 
             # Handle tool calls
             if response.has_tool_calls:
+                tools_called += len(response.tool_calls)
                 # Add assistant message with tool calls
                 tool_call_dicts = [
                     {
@@ -322,23 +360,77 @@ class AgentLoop:
                     reasoning_content=response.reasoning_content,
                 )
 
-                # Execute tools
-                for tool_call in response.tool_calls:
-                    args_str = self._log_tool_args(tool_call.arguments)
-                    logger.info(f"Tool call: {tool_call.name}({args_str})")
-                    result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                # Execute tools in parallel
+                async def _exec_one(tc):
+                    args_str = self._log_tool_args(tc.arguments)
+                    logger.info(f"Tool call: {tc.name}({args_str})")
+                    res = await self.tools.execute(tc.name, tc.arguments)
+                    return tc, res
+
+                results = await asyncio.gather(
+                    *[_exec_one(tc) for tc in response.tool_calls],
+                    return_exceptions=True,
+                )
+
+                for tc_or_exc, res in zip(response.tool_calls, results):
+                    if isinstance(res, Exception):
+                        tc = tc_or_exc
+                        result = f"Error executing {tc.name}: {res}"
+                    else:
+                        tc, result = res
+                    
                     messages = self.context.add_tool_result(
-                        messages, tool_call.id, tool_call.name, result
+                        messages, tc.id, tc.name, result
                     )
                     # Save tool result to session
                     session.add_message(
                         "tool", 
                         result, 
-                        tool_call_id=tool_call.id, 
-                        name=tool_call.name
+                        tool_call_id=tc.id, 
+                        name=tc.name
                     )
             else:
-                # No tool calls, we're done
+                # No tool calls, check if truly final or needs continuation
+                if (
+                    iteration < self.max_iterations 
+                    and response.content 
+                    and self._needs_continuation(response.content, getattr(response, "finish_reason", None))
+                ):
+                    logger.info("Auto-continuation triggered")
+                    # Send what we have so far if it's a long thought
+                    if response.content and not stream_callback:
+                         await self.bus.publish_outbound(
+                            OutboundMessage(
+                                channel=msg.channel,
+                                chat_id=msg.chat_id,
+                                content=response.content,
+                                metadata=msg.metadata or {}
+                            )
+                        )
+                    
+                    messages = self.context.add_assistant_message(
+                        messages, response.content, reasoning_content=response.reasoning_content
+                    )
+                    messages.append({"role": "user", "content": "Continue"})
+                    continue
+
+                # Action verification: did the agent claim actions without tool calls?
+                if (
+                    response.content 
+                    and tools_called == 0 
+                    and self._contains_unverified_actions(response.content)
+                    and iteration < self.max_iterations
+                ):
+                    logger.warning("Action claim detected without tool calls, prompting for tool use")
+                    messages = self.context.add_assistant_message(
+                        messages, response.content, reasoning_content=response.reasoning_content
+                    )
+                    messages.append({
+                        "role": "user", 
+                        "content": "You said you performed an action, but you didn't call any tools. Please call the appropriate tool to actually perform the action."
+                    })
+                    continue
+
                 final_content = response.content
                 break
 

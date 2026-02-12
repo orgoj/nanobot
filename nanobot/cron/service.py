@@ -30,9 +30,20 @@ def _compute_next_run(schedule: CronSchedule, now_ms: int) -> int | None:
     if schedule.kind == "cron" and schedule.expr:
         try:
             from croniter import croniter
-            cron = croniter(schedule.expr, time.time())
-            next_time = cron.get_next()
-            return int(next_time * 1000)
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            
+            base_dt = datetime.fromtimestamp(now_ms / 1000).astimezone()
+            if schedule.tz:
+                try:
+                    base_dt = base_dt.astimezone(ZoneInfo(schedule.tz))
+                except Exception:
+                    logger.warning(f"Invalid cron timezone '{schedule.tz}', fallback to local timezone")
+
+            next_dt = croniter(schedule.expr, base_dt).get_next(datetime)
+            if next_dt.tzinfo is None:
+                next_dt = next_dt.replace(tzinfo=base_dt.tzinfo)
+            return int(next_dt.timestamp() * 1000)
         except Exception:
             return None
     
@@ -77,6 +88,12 @@ class CronService:
                         payload=CronPayload(
                             kind=j["payload"].get("kind", "agent_turn"),
                             message=j["payload"].get("message", ""),
+                            tool_name=j["payload"].get("toolName"),
+                            tool_args=(
+                                j["payload"].get("toolArgs")
+                                if isinstance(j["payload"].get("toolArgs"), dict)
+                                else None
+                            ),
                             deliver=j["payload"].get("deliver", False),
                             channel=j["payload"].get("channel"),
                             to=j["payload"].get("to"),
@@ -124,6 +141,8 @@ class CronService:
                     "payload": {
                         "kind": j.payload.kind,
                         "message": j.payload.message,
+                        "toolName": j.payload.tool_name,
+                        "toolArgs": j.payload.tool_args,
                         "deliver": j.payload.deliver,
                         "channel": j.payload.channel,
                         "to": j.payload.to,
@@ -259,6 +278,9 @@ class CronService:
         name: str,
         schedule: CronSchedule,
         message: str,
+        payload_kind: str = "agent_turn",
+        tool_name: str | None = None,
+        tool_args: dict[str, Any] | None = None,
         deliver: bool = False,
         channel: str | None = None,
         to: str | None = None,
@@ -268,14 +290,22 @@ class CronService:
         store = self._load_store()
         now = _now_ms()
         
+        kind = (
+            payload_kind
+            if payload_kind in {"system_event", "agent_turn", "tool_call"}
+            else "agent_turn"
+        )
+
         job = CronJob(
             id=str(uuid.uuid4())[:8],
             name=name,
             enabled=True,
             schedule=schedule,
             payload=CronPayload(
-                kind="agent_turn",
+                kind=kind,
                 message=message,
+                tool_name=tool_name,
+                tool_args=tool_args,
                 deliver=deliver,
                 channel=channel,
                 to=to,
