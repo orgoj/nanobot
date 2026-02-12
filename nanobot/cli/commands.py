@@ -359,14 +359,8 @@ def gateway(
         resp = await agent.process_direct(
             prompt, session_key="heartbeat", channel=channel, chat_id=chat_id
         )
-
-        # If it responded with text and target is NOT cli, send it to the channel
-        if channel != "cli" and resp and resp != "HEARTBEAT_OK":
-            from nanobot.bus.events import OutboundMessage
-
-            await bus.publish_outbound(
-                OutboundMessage(channel=channel, chat_id=chat_id, content=resp)
-            )
+        # Heartbeat response goes to logs only, not to channels
+        logger.debug(f"Heartbeat response: {resp}")
         return resp
 
     heartbeat = HeartbeatService(
@@ -452,20 +446,11 @@ def gateway(
                             channel=channel,
                             chat_id=chat_id,
                         )
-                        # Only publish if it's NOT a confirmation message
-                        # (agent already sent via message tool)
-                        if channel != "cli" and resp:
-                            resp_lower = resp.lower()
-                            is_confirmation = any(
-                                word in resp_lower
-                                for word in ["odesláno", "sent", "delivered", "done", "✅"]
-                            )
-                            if not is_confirmation:
-                                from nanobot.bus.events import OutboundMessage
-
-                                await bus.publish_outbound(
-                                    OutboundMessage(channel=channel, chat_id=chat_id, content=resp)
-                                )
+                        # Startup response goes to logs only, not to channels
+                        # Agent can use message tool if it wants to send to channels
+                        logger.info(
+                            f"Startup prompt completed: {resp[:100] if resp else 'no response'}..."
+                        )
                     except Exception as e:
                         logger.error(f"Error in startup prompt: {e}")
 
