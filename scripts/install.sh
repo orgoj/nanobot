@@ -1,26 +1,31 @@
 #!/bin/bash
-# Nanobot Local Installation Script (Interactive)
-# Run this on the target machine (Ubuntu/Armbian)
+# Nanobot Local Installation Script (Interactive) - Revised for User installation
+# Run this on the target machine as the user who will run the bot (e.g. nanobot)
 
 set -e
 
 # Colors for better output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-echo -e "${GREEN}🤖 Nanobot Local Installer${NC}"
+echo -e "${GREEN}🤖 Nanobot Local Installer (User Mode)${NC}"
 echo "---------------------------"
 
-# 1. System Dependencies
-echo -e "\n${GREEN}[1/5] Installing system dependencies...${NC}"
-SUDO=""
-if [ "$(id -u)" -ne 0 ]; then
-    SUDO="sudo"
+# 0. Check for sudo availability
+if ! command -v sudo &> /dev/null; then
+    echo -e "${RED}Error: sudo is required for system packages.${NC}"
+    exit 1
 fi
 
-$SUDO apt-get update
-$SUDO apt-get install -y --no-install-recommends \
+# Fix potential permission issues if root ran something here before
+echo "Checking directory permissions..."
+sudo chown -R $(whoami):$(whoami) $HOME
+
+# 1. System Dependencies (Requires sudo password)
+echo -e "\n${GREEN}[1/5] Installing system dependencies...${NC}"
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
     curl ca-certificates gnupg git tmux gh \
     libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
@@ -29,17 +34,25 @@ $SUDO apt-get install -y --no-install-recommends \
 # Install Node.js 20 if missing
 if ! command -v node &> /dev/null || ! node -v | grep -q "v20"; then
     echo "🟢 Installing Node.js 20..."
-    $SUDO mkdir -p /etc/apt/keyrings
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/nodesource.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | $SUDO tee /etc/apt/sources.list.d/nodesource.list
-    $SUDO apt-get update
-    $SUDO apt-get install -y nodejs
+    sudo mkdir -p /etc/apt/keyrings
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor --yes -o /etc/apt/keyrings/nodesource.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+    sudo apt-get update
+    sudo apt-get install -y nodejs
 fi
 
-# Install uv if missing
-if ! command -v uv &> /dev/null; then
-    echo "🟢 Installing uv..."
+# Install uv for current user
+if [ ! -f "$HOME/.local/bin/uv" ]; then
+    echo "🟢 Installing uv for $(whoami)..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Ensure it's in PATH for this session
+    export PATH="$HOME/.local/bin:$PATH"
+    # Add to bashrc if not already there
+    if ! grep -q ".local/bin" "$HOME/.bashrc"; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    fi
+else
+    echo "uv is already installed in $HOME/.local/bin"
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
@@ -57,7 +70,8 @@ fi
 
 # 3. Application Install
 echo -e "\n${GREEN}[3/5] Installing Nanobot application...${NC}"
-uv pip install --system .
+# Use uv to sync dependencies
+$HOME/.local/bin/uv pip install .
 
 if [ -d "bridge" ]; then
     echo "Building WhatsApp bridge..."
@@ -67,16 +81,14 @@ if [ -d "bridge" ]; then
     cd ..
 fi
 
-# 4. Systemd Service
+# 4. Systemd Service Setup
 echo -e "\n${GREEN}[4/5] Systemd Service Setup${NC}"
-read -p "Do you want to create a systemd service for Nanobot? (y/n) " -n 1 -r
+read -p "Do you want to create/update a systemd service for Nanobot? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     SERVICE_PATH="/etc/systemd/system/nanobot.service"
     APP_DIR=$(pwd)
     USER_NAME=$(whoami)
-    
-    echo "Setting up service..."
     
     # Console logging question
     CONSOLE_LOG=""
@@ -84,9 +96,12 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         CONSOLE_LOG="StandardOutput=journal+console\nStandardError=journal+console\nTTYPath=/dev/tty1"
+    else
+        CONSOLE_LOG="StandardOutput=journal\nStandardError=journal"
     fi
 
-    cat << EOF | $SUDO tee $SERVICE_PATH > /dev/null
+    echo "Creating service file at $SERVICE_PATH..."
+    sudo tee $SERVICE_PATH > /dev/null << EOF
 [Unit]
 Description=Nanobot AI Assistant
 After=network.target
@@ -95,8 +110,10 @@ After=network.target
 Type=simple
 User=$USER_NAME
 WorkingDirectory=$APP_DIR
+# Explicitly set PATH to include user's uv installation
 Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=$(command -v python3) -m nanobot.cli.commands gateway
+# Use uv run to ensure the app runs in the correct environment
+ExecStart=$HOME/.local/bin/uv run nanobot gateway
 Restart=always
 RestartSec=10
 $CONSOLE_LOG
@@ -105,21 +122,21 @@ $CONSOLE_LOG
 WantedBy=multi-user.target
 EOF
 
-    $SUDO systemctl daemon-reload
-    $SUDO systemctl enable nanobot.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable nanobot.service
     
     # Allow service restart without password
-    echo "Allowing service restart without sudo password..."
-    echo "$USER_NAME ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nanobot.service" | $SUDO tee /etc/sudoers.d/nanobot-service > /dev/null
-    $SUDO chmod 440 /etc/sudoers.d/nanobot-service
+    echo "Configuring sudoers for nanobot restart..."
+    echo "$USER_NAME ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nanobot.service" | sudo tee /etc/sudoers.d/nanobot-service > /dev/null
+    sudo chmod 440 /etc/sudoers.d/nanobot-service
 
-    echo -e "${GREEN}Service 'nanobot' created and enabled.${NC}"
+    echo -e "${GREEN}Service 'nanobot' configured.${NC}"
 fi
 
 # 5. Finalize
 echo -e "\n${GREEN}[5/5] Installation complete!${NC}"
 echo "---------------------------"
-echo "To start the bot: systemctl start nanobot (if service created)"
+echo "To restart the bot: sudo systemctl restart nanobot"
 echo "To see logs: journalctl -u nanobot -f"
 echo ""
-echo "Don't forget to migrate your data (.nanobot and workspace) from your dev machine."
+echo "Try running manually first to verify: uv run nanobot gateway"
