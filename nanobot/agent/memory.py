@@ -12,15 +12,15 @@ from nanobot.utils.helpers import ensure_dir, today_date
 
 class MemoryStore:
     """
-    Memory system for the agent.
-
-    Supports daily notes (memory/YYYY-MM-DD.md) and long-term memory (MEMORY.md).
+    Two-layer memory: MEMORY.md (long-term facts) + HISTORY.md (grep-searchable log).
+    Also supports daily notes (memory/YYYY-MM-DD.md).
     """
 
     def __init__(self, workspace: Path, memory_config: "MemoryConfig | None" = None):
         self.workspace = workspace
         self.memory_dir = ensure_dir(workspace / "memory")
         self.memory_file = self.memory_dir / "MEMORY.md"
+        self.history_file = self.memory_dir / "HISTORY.md"
         self.config = memory_config
 
     def _get_max_lines(self, setting: str, default: int) -> int:
@@ -63,6 +63,11 @@ class MemoryStore:
     def write_long_term(self, content: str) -> None:
         """Write to long-term memory (MEMORY.md)."""
         self.memory_file.write_text(content, encoding="utf-8")
+
+    def append_history(self, entry: str) -> None:
+        """Append entry to history log (HISTORY.md)."""
+        with open(self.history_file, "a", encoding="utf-8") as f:
+            f.write(entry.rstrip() + "\n\n")
 
     def get_recent_memories(self, days: int = 7) -> str:
         """

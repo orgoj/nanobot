@@ -219,7 +219,7 @@ Maintain a record of significant actions and analyses in your daily memory files
 - Always explain what you're doing before taking actions
 - Ask for clarification when the request is ambiguous
 - Use tools to help accomplish tasks
-- Remember important information in your memory files
+- Remember important information in memory/MEMORY.md; past events are logged in memory/HISTORY.md
 """,
         "SOUL.md": """# Soul
 
@@ -257,7 +257,7 @@ Information about the user goes here.
 
     # Create memory directory and MEMORY.md
     memory_dir = workspace / "memory"
-    memory_dir.mkdir(exist_ok=True)
+    memory_dir.mkdir(parents=True, exist_ok=True)
     memory_file = memory_dir / "MEMORY.md"
     if not memory_file.exists():
         memory_file.write_text(
@@ -279,6 +279,11 @@ This file stores important information that should persist across sessions.
 """
         )
         console.print("  [dim]Created memory/MEMORY.md[/dim]")
+
+    history_file = memory_dir / "HISTORY.md"
+    if not history_file.exists():
+        history_file.write_text("")
+        console.print("  [dim]Created memory/HISTORY.md[/dim]")
 
     # Create skills directory for custom user skills
     skills_dir = workspace / "skills"
@@ -376,6 +381,7 @@ def gateway(
         workspace=config.workspace_path,
         model=config.agents.defaults.model,
         max_iterations=config.agents.defaults.max_tool_iterations,
+        memory_window=config.agents.defaults.memory_window,
         subagent_max_iterations=config.agents.defaults.subagent_max_iterations,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
@@ -509,7 +515,9 @@ def agent(
         bus=bus,
         provider=provider,
         workspace=config.workspace_path,
+        model=config.agents.defaults.model,
         max_iterations=config.agents.defaults.max_tool_iterations,
+        memory_window=config.agents.defaults.memory_window,
         subagent_max_iterations=config.agents.defaults.subagent_max_iterations,
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
@@ -647,9 +655,6 @@ def channels_status():
     )
     table.add_row("Email", "✓" if email.enabled else "✗", email_config)
 
-    # Mochat
-    mc = config.channels.mochat
-    mc_base = mc.base_url or "[dim]not configured[/dim]"
     # Mochat
     mc = config.channels.mochat
     mc_base = mc.base_url or "[dim]not configured[/dim]"

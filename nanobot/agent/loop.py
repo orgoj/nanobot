@@ -16,6 +16,7 @@ from loguru import logger
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.context_factory import ContextBuilderFactory
 from nanobot.agent.loop_guard import tool_call_hash
+from nanobot.agent.memory import MemoryStore
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -50,6 +51,7 @@ class AgentLoop:
         workspace: Path,
         model: str | None = None,
         max_iterations: int = 20,
+        memory_window: int = 50,
         subagent_max_iterations: int = 25,
         brave_api_key: str | None = None,
         exec_config: "ExecToolConfig | None" = None,
@@ -66,6 +68,7 @@ class AgentLoop:
         self.workspace = workspace
         self.model = model or provider.get_default_model()
         self.max_iterations = max_iterations
+        self.memory_window = memory_window
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
@@ -263,7 +266,10 @@ class AgentLoop:
         return any(claim in content_lower for claim in action_claims)
 
     async def _process_message(
-        self, msg: InboundMessage, stream_callback: Callable[[str], Any] | None = None
+        self,
+        msg: InboundMessage,
+        stream_callback: Callable[[str], Any] | None = None,
+        session_key: str | None = None,
     ) -> OutboundMessage | None:
         """
         Process a single inbound message.
@@ -271,6 +277,7 @@ class AgentLoop:
         Args:
             msg: The inbound message to process.
             stream_callback: Optional callback for streaming content chunks.
+            session_key: Override session key (used by process_direct).
 
         Returns:
             The response message, or None if no response needed.
@@ -288,7 +295,12 @@ class AgentLoop:
             logger.debug(f"Full message content: {msg.content}")
 
         # Get or create session
-        session = self.sessions.get_or_create(msg.session_key)
+        session = self.sessions.get_or_create(session_key or msg.session_key)
+
+        # Consolidate memory before processing if session is too large
+        if len(session.messages) > self.memory_window:
+            await self._consolidate_memory(session)
+
         session.add_message("user", msg.content, media=msg.media)
 
         # Update tool contexts
@@ -320,6 +332,7 @@ class AgentLoop:
         final_content = None
         tools_called = 0
         seen_tool_hashes = set()
+        tools_used: list[str] = []
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -381,6 +394,9 @@ class AgentLoop:
                     seen_tool_hashes.add(h)
 
                 tools_called += len(response.tool_calls)
+                for tc in response.tool_calls:
+                    tools_used.append(tc.name)
+
                 # Add assistant message with tool calls
                 tool_call_dicts = [
                     {
@@ -422,6 +438,11 @@ class AgentLoop:
                     messages = self.context.add_tool_result(messages, tc.id, tc.name, result)
                     # Save tool result to session
                     session.add_message("tool", result, tool_call_id=tc.id, name=tc.name)
+
+                # Interleaved CoT: reflect before next action
+                messages.append(
+                    {"role": "user", "content": "Reflect on the results and decide next steps."}
+                )
             else:
                 # No tool calls, check if truly final or needs continuation
                 if (
@@ -485,7 +506,12 @@ class AgentLoop:
             logger.debug(f"Full response content: {final_content}")
 
         # Save final assistant message to session
-        session.add_message("assistant", final_content)
+        session.add_message(
+            "assistant",
+            final_content,
+            tools_used=tools_used if tools_used else None,
+            reasoning_content=getattr(response, "reasoning_content", None),
+        )
         self.sessions.save(session)
 
         # Mark stream as done so channel can close streaming session
@@ -553,6 +579,7 @@ class AgentLoop:
         # Agent loop (limited for announce handling)
         iteration = 0
         final_content = None
+        tools_used: list[str] = []
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -578,6 +605,7 @@ class AgentLoop:
                 )
 
                 for tool_call in response.tool_calls:
+                    tools_used.append(tool_call.name)
                     args_str = self._log_tool_args(tool_call.arguments)
                     logger.info(f"Tool call: {tool_call.name}({args_str})")
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
@@ -588,6 +616,11 @@ class AgentLoop:
                     session.add_message(
                         "tool", result, tool_call_id=tool_call.id, name=tool_call.name
                     )
+
+                # Interleaved CoT: reflect before next action
+                messages.append(
+                    {"role": "user", "content": "Reflect on the results and decide next steps."}
+                )
             else:
                 final_content = response.content
                 break
@@ -599,12 +632,88 @@ class AgentLoop:
         session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
         # Preserve reasoning_content for reasoning models
         reasoning_content = getattr(response, "reasoning_content", None)
-        session.add_message("assistant", final_content, reasoning_content=reasoning_content)
+        session.add_message(
+            "assistant",
+            final_content,
+            reasoning_content=reasoning_content,
+            tools_used=tools_used if tools_used else None,
+        )
         self.sessions.save(session)
 
         return OutboundMessage(
             channel=origin_channel, chat_id=origin_chat_id, content=final_content
         )
+
+    async def _consolidate_memory(self, session) -> None:
+        """Consolidate old messages into MEMORY.md + HISTORY.md, then trim session."""
+        memory = MemoryStore(self.workspace, memory_config=self.config.memory)
+        keep_count = min(10, max(2, self.memory_window // 2))
+        old_messages = session.messages[:-keep_count]  # Everything except recent ones
+        if not old_messages:
+            return
+        logger.info(
+            f"Memory consolidation started: {len(session.messages)} messages, archiving {len(old_messages)}, keeping {keep_count}"
+        )
+
+        # Format messages for LLM (include tool names when available)
+        lines = []
+        for m in old_messages:
+            if not m.get("content"):
+                continue
+            tools = f" [tools: {', '.join(m['tools_used'])}]" if m.get("tools_used") else ""
+            lines.append(
+                f"[{m.get('timestamp', '?')[:16]}] {m['role'].upper()}{tools}: {m['content']}"
+            )
+        conversation = "\n".join(lines)
+        current_memory = memory.read_long_term()
+
+        prompt = f"""You are a memory consolidation agent. Process this conversation and return a JSON object with exactly two keys:
+
+1. "history_entry": A paragraph (2-5 sentences) summarizing the key events/decisions/topics. Start with a timestamp like [YYYY-MM-DD HH:MM]. Include enough detail to be useful when found by grep search later.
+
+2. "memory_update": The updated long-term memory content. Add any new facts: user location, preferences, personal info, habits, project context, technical decisions, tools/services used. If nothing new, return the existing content unchanged.
+
+## Current Long-term Memory
+{current_memory or "(empty)"}
+
+## Conversation to Process
+{conversation}
+
+Respond with ONLY valid JSON, no markdown fences."""
+
+        try:
+            response = await self.provider.chat(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a memory consolidation agent. Respond only with valid JSON.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                model=self.model,
+            )
+            import json as _json
+
+            text = (response.content or "").strip()
+            # Strip markdown fences that LLMs often add despite instructions
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            result = _json.loads(text)
+
+            if entry := result.get("history_entry"):
+                memory.append_history(entry)
+            if update := result.get("memory_update"):
+                if update != current_memory:
+                    memory.write_long_term(update)
+
+            # Trim session to recent messages
+            session.messages = session.messages[-keep_count:]
+            self.sessions.save(session)
+            logger.info(
+                f"Memory consolidation done, session trimmed to {len(session.messages)} messages"
+            )
+        except Exception as e:
+            logger.error(f"Memory consolidation failed: {e}")
 
     async def process_direct(
         self,
@@ -619,7 +728,7 @@ class AgentLoop:
 
         Args:
             content: The message content.
-            session_key: Session identifier.
+            session_key: Session identifier (overrides channel:chat_id for session lookup).
             channel: Source channel (for context).
             chat_id: Source chat ID (for context).
             stream_callback: Optional callback for streaming content chunks.
@@ -634,5 +743,7 @@ class AgentLoop:
             content=content,
         )
 
-        response = await self._process_message(msg, stream_callback=stream_callback)
+        response = await self._process_message(
+            msg, stream_callback=stream_callback, session_key=session_key
+        )
         return response.content if response else ""

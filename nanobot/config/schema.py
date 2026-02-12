@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -195,6 +195,7 @@ class AgentDefaults(BaseModel):
     max_tokens: int = 8192
     temperature: float = 0.7
     max_tool_iterations: int = 20
+    memory_window: int = 50
     subagent_max_iterations: int = 25
     startup_prompt: str | None = None
     startup_target: str = "cli:direct"
@@ -392,6 +393,4 @@ class Config(BaseSettings):
                 return spec.default_api_base
         return None
 
-    class Config:
-        env_prefix = "NANOBOT_"
-        env_nested_delimiter = "__"
+    model_config = ConfigDict(env_prefix="NANOBOT_", env_nested_delimiter="__")
