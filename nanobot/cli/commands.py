@@ -209,6 +209,16 @@ def _create_workspace_templates(workspace: Path):
 
 You are a helpful AI assistant. Be concise, accurate, and friendly.
 
+## 🎯 Multi-Agent Orchestration (Optional)
+
+When a task requires specialized skills, you can delegate using the `spawn` tool:
+- Strategic Analysis: Use a reasoning model (like DeepSeek-R1).
+- Complex Coding: Use a coding specialist (like Qwen-Coder).
+
+## 📝 Accountability & Journaling
+
+Maintain a record of significant actions and analyses in your daily memory files (`memory/YYYY-MM-DD.md`). Always use tools to persist important findings.
+
 ## Guidelines
 
 - Always explain what you're doing before taking actions
