@@ -4,7 +4,10 @@ import base64
 import mimetypes
 import platform
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nanobot.config.schema import MemoryConfig
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
@@ -20,9 +23,9 @@ class ContextBuilder:
     
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"]
     
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, memory_config: "MemoryConfig | None" = None):
         self.workspace = workspace
-        self.memory = MemoryStore(workspace)
+        self.memory = MemoryStore(workspace, memory_config=memory_config)
         self.skills = SkillsLoader(workspace)
     
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
@@ -68,7 +71,12 @@ Skills with available="false" need dependencies installed first - you can try in
 
 {skills_summary}""")
         
-        return "\n\n---\n\n".join(parts)
+        system_prompt = "\n\n---\n\n".join(parts)
+        
+        # Final reminder for better instruction following
+        system_prompt += "\n\n---\n\n# FINAL REMINDER: ACT, DON'T TALK\nIf the user asked you to do something, CALL THE TOOL NOW. Do not just say you will do it. If you need to spawn a subagent, use the `spawn` tool immediately."
+        
+        return system_prompt
     
     def _get_identity(self) -> str:
         """Get the core identity section."""
@@ -80,12 +88,21 @@ Skills with available="false" need dependencies installed first - you can try in
         
         return f"""# nanobot 🐈
 
-You are nanobot, a helpful AI assistant. You have access to tools that allow you to:
-- Read, write, and edit files
-- Execute shell commands
-- Search the web and fetch web pages
-- Send messages to users on chat channels
-- Spawn subagents for complex background tasks
+You are nanobot, a helpful AI assistant.
+
+## 🎯 CRITICAL: Tool-First Behavior
+
+When asked to DO something:
+1. CALL THE TOOL FIRST
+2. Wait for result
+3. THEN respond
+
+Pattern: User request → TOOL CALL → Verify result → Respond with proof
+
+NEVER:
+- Say "I will do X" without calling the tool
+- Write "Done!" without verifying the tool succeeded
+- Respond before taking action
 
 ## Current Time
 {now}
@@ -94,17 +111,9 @@ You are nanobot, a helpful AI assistant. You have access to tools that allow you
 {runtime}
 
 ## Workspace
-Your workspace is at: {workspace_path}
-- Memory files: {workspace_path}/memory/MEMORY.md
-- Daily notes: {workspace_path}/memory/YYYY-MM-DD.md
-- Custom skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
+{workspace_path}
 
-IMPORTANT: When responding to direct questions or conversations, reply directly with your text response.
-Only use the 'message' tool when you need to send a message to a specific chat channel (like WhatsApp).
-For normal conversation, just respond with text - do not call the message tool.
-
-Always be helpful, accurate, and concise. When using tools, explain what you're doing.
-When remembering something, write to {workspace_path}/memory/MEMORY.md"""
+Memory: memory/MEMORY.md | Daily notes: memory/YYYY-MM-DD.md"""
     
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""

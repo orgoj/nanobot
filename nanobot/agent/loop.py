@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ExecToolConfig
+    from nanobot.config.schema import Config, ExecToolConfig
     from nanobot.cron.service import CronService
 
 from loguru import logger
@@ -51,8 +51,9 @@ class AgentLoop:
         cron_service: "CronService | None" = None,
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
+        config: "Config | None" = None,
     ):
-        from nanobot.config.schema import ExecToolConfig
+        from nanobot.config.schema import Config, ExecToolConfig
 
         self.bus = bus
         self.provider = provider
@@ -63,8 +64,9 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.config = config or Config()
 
-        self.context = ContextBuilder(workspace)
+        self.context = ContextBuilder(workspace, memory_config=self.config.memory)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -115,6 +117,23 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
+    def _log_content(self, content: str, prefix: str = "", max_len: int = 80) -> str:
+        """Return truncated or full content based on config."""
+        if self.config.logging.log_full_messages:
+            return content
+        if len(content) <= max_len:
+            return content
+        return content[:max_len] + "..."
+
+    def _log_tool_args(self, args: dict, max_len: int = 200) -> str:
+        """Return truncated or full tool args based on config."""
+        args_str = json.dumps(args, ensure_ascii=False)
+        if self.config.logging.log_full_tool_args:
+            return args_str
+        if len(args_str) <= max_len:
+            return args_str
+        return args_str[:max_len] + "..."
+
     async def run(self) -> None:
         """Run the agent loop, processing messages from the bus."""
         self._running = True
@@ -163,11 +182,16 @@ class AgentLoop:
         if msg.channel == "system":
             return await self._process_system_message(msg)
 
-        preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
+        preview = self._log_content(msg.content)
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}: {preview}")
+
+        # Log full content at DEBUG level if truncation occurred
+        if self.config.logging.log_full_messages and len(msg.content) > 80:
+            logger.debug(f"Full message content: {msg.content}")
 
         # Get or create session
         session = self.sessions.get_or_create(msg.session_key)
+        session.add_message("user", msg.content, media=msg.media)
 
         # Update tool contexts
         message_tool = self.tools.get("message")
@@ -223,14 +247,40 @@ class AgentLoop:
                     tool_call_dicts,
                     reasoning_content=response.reasoning_content,
                 )
+                
+                # Save assistant message to session
+                session.add_message(
+                    "assistant", 
+                    response.content, 
+                    tool_calls=tool_call_dicts, 
+                    reasoning_content=response.reasoning_content
+                )
+
+                # Send intermediate message to user if content is present and streaming is enabled
+                if response.content and self.config.agents.defaults.stream_intermediate_responses:
+                    await self.bus.publish_outbound(
+                        OutboundMessage(
+                            channel=msg.channel,
+                            chat_id=msg.chat_id,
+                            content=response.content,
+                            metadata=msg.metadata or {}
+                        )
+                    )
 
                 # Execute tools
                 for tool_call in response.tool_calls:
-                    args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
-                    logger.info(f"Tool call: {tool_call.name}({args_str[:200]})")
+                    args_str = self._log_tool_args(tool_call.arguments)
+                    logger.info(f"Tool call: {tool_call.name}({args_str})")
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
+                    )
+                    # Save tool result to session
+                    session.add_message(
+                        "tool", 
+                        result, 
+                        tool_call_id=tool_call.id, 
+                        name=tool_call.name
                     )
             else:
                 # No tool calls, we're done
@@ -241,11 +291,14 @@ class AgentLoop:
             final_content = "I've completed processing but have no response to give."
 
         # Log response preview
-        preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
+        preview = self._log_content(final_content, max_len=120)
         logger.info(f"Response to {msg.channel}:{msg.sender_id}: {preview}")
 
-        # Save to session
-        session.add_message("user", msg.content)
+        # Log full response at DEBUG level if truncation occurred
+        if self.config.logging.log_full_messages and len(final_content) > 120:
+            logger.debug(f"Full response content: {final_content}")
+
+        # Save final assistant message to session
         session.add_message("assistant", final_content)
         self.sessions.save(session)
 
@@ -279,6 +332,7 @@ class AgentLoop:
         # Use the origin session for context
         session_key = f"{origin_channel}:{origin_chat_id}"
         session = self.sessions.get_or_create(session_key)
+        session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
 
         # Update tool contexts
         message_tool = self.tools.get("message")
@@ -327,13 +381,38 @@ class AgentLoop:
                     tool_call_dicts,
                     reasoning_content=response.reasoning_content,
                 )
+                
+                # Save assistant message to session
+                session.add_message(
+                    "assistant", 
+                    response.content, 
+                    tool_calls=tool_call_dicts, 
+                    reasoning_content=response.reasoning_content
+                )
+
+                # Send intermediate message to user if content is present and streaming is enabled
+                if response.content and self.config.agents.defaults.stream_intermediate_responses:
+                    await self.bus.publish_outbound(
+                        OutboundMessage(
+                            channel=origin_channel,
+                            chat_id=origin_chat_id,
+                            content=response.content
+                        )
+                    )
 
                 for tool_call in response.tool_calls:
-                    args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
-                    logger.info(f"Tool call: {tool_call.name}({args_str[:200]})")
+                    args_str = self._log_tool_args(tool_call.arguments)
+                    logger.info(f"Tool call: {tool_call.name}({args_str})")
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
+                    )
+                    # Save tool result to session
+                    session.add_message(
+                        "tool", 
+                        result, 
+                        tool_call_id=tool_call.id, 
+                        name=tool_call.name
                     )
             else:
                 final_content = response.content
@@ -342,8 +421,7 @@ class AgentLoop:
         if final_content is None:
             final_content = "Background task completed."
 
-        # Save to session (mark as system message in history)
-        session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
+        # Save final assistant message to session
         session.add_message("assistant", final_content)
         self.sessions.save(session)
 

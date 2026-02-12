@@ -188,6 +188,7 @@ class AgentDefaults(BaseModel):
     startup_target: str = "cli:direct"
     heartbeat_on_start: bool = False
     heartbeat_target: str = "cli:direct"
+    stream_intermediate_responses: bool = False  # If True, send intermediate thoughts to user
 
 
 class AgentsConfig(BaseModel):
@@ -262,6 +263,16 @@ class LoggingConfig(BaseModel):
     file_log_path: str | None = (
         None  # Optional custom path, defaults to {workspace}/logs/nanobot.log
     )
+    log_full_messages: bool = False  # Log complete message content (no truncation)
+    log_full_tool_args: bool = False  # Log complete tool arguments (no truncation)
+
+
+class MemoryConfig(BaseModel):
+    """Memory context configuration."""
+
+    max_long_term_lines: int = 50  # Max lines from MEMORY.md to include in context
+    max_daily_lines: int = 100  # Max lines from daily notes to include in context
+    include_recent_days: int = 3  # Number of recent daily notes to include
 
 
 class Config(BaseSettings):
@@ -273,6 +284,7 @@ class Config(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
 
     @property
     def workspace_path(self) -> Path:

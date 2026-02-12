@@ -25,17 +25,17 @@ class Session:
     updated_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
     
-    def add_message(self, role: str, content: str, **kwargs: Any) -> None:
+    def add_message(self, role: str, content: str | None = None, **kwargs: Any) -> None:
         """Add a message to the session."""
         msg = {
             "role": role,
-            "content": content,
+            "content": content or "",
             "timestamp": datetime.now().isoformat(),
             **kwargs
         }
         self.messages.append(msg)
         self.updated_at = datetime.now()
-    
+
     def get_history(self, max_messages: int = 50) -> list[dict[str, Any]]:
         """
         Get message history for LLM context.
@@ -49,8 +49,20 @@ class Session:
         # Get recent messages
         recent = self.messages[-max_messages:] if len(self.messages) > max_messages else self.messages
         
-        # Convert to LLM format (just role and content)
-        return [{"role": m["role"], "content": m["content"]} for m in recent]
+        # Convert to LLM format (preserving tool calls and results)
+        history = []
+        for m in recent:
+            msg = {"role": m["role"], "content": m.get("content", "")}
+            if "tool_calls" in m:
+                msg["tool_calls"] = m["tool_calls"]
+            if "tool_call_id" in m:
+                msg["tool_call_id"] = m["tool_call_id"]
+            if "name" in m:
+                msg["name"] = m["name"]
+            if "reasoning_content" in m:
+                msg["reasoning_content"] = m["reasoning_content"]
+            history.append(msg)
+        return history
     
     def clear(self) -> None:
         """Clear all messages in the session."""

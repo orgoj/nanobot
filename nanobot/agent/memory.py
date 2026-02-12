@@ -2,6 +2,10 @@
 
 from pathlib import Path
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nanobot.config.schema import MemoryConfig
 
 from nanobot.utils.helpers import ensure_dir, today_date
 
@@ -13,10 +17,17 @@ class MemoryStore:
     Supports daily notes (memory/YYYY-MM-DD.md) and long-term memory (MEMORY.md).
     """
     
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, memory_config: "MemoryConfig | None" = None):
         self.workspace = workspace
         self.memory_dir = ensure_dir(workspace / "memory")
         self.memory_file = self.memory_dir / "MEMORY.md"
+        self.config = memory_config
+    
+    def _get_max_lines(self, setting: str, default: int) -> int:
+        """Get max lines from config or default."""
+        if self.config:
+            return getattr(self.config, setting, default)
+        return default
     
     def get_today_file(self) -> Path:
         """Get path to today's memory file."""
@@ -93,17 +104,29 @@ class MemoryStore:
         
         Returns:
             Formatted memory context including long-term and recent memories.
+            Limits output based on config to reduce token usage.
         """
         parts = []
         
-        # Long-term memory
+        # Long-term memory (limited lines from end)
         long_term = self.read_long_term()
         if long_term:
+            max_lines = self._get_max_lines("max_long_term_lines", 50)
+            lines = long_term.strip().split("\n")
+            if len(lines) > max_lines:
+                # Take last N lines (most recent entries)
+                lines = lines[-max_lines:]
+                long_term = "\n".join(lines)
             parts.append("## Long-term Memory\n" + long_term)
         
-        # Today's notes
+        # Today's notes (limited lines from end)
         today = self.read_today()
         if today:
+            max_lines = self._get_max_lines("max_daily_lines", 100)
+            lines = today.strip().split("\n")
+            if len(lines) > max_lines:
+                lines = lines[-max_lines:]
+                today = "\n".join(lines)
             parts.append("## Today's Notes\n" + today)
         
         return "\n\n".join(parts) if parts else ""
