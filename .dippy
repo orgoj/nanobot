@@ -1,4 +1,8 @@
+allow git *
+
 allow ruff *
 
 allow-read /home/michael/work/nanobot/**
 allow-edit /home/michael/work/nanobot/**
+allow-redirect nanobot/**
+allow-redirect tests/**

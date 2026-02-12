@@ -15,6 +15,7 @@ from loguru import logger
 
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.context_factory import ContextBuilderFactory
+from nanobot.agent.loop_guard import tool_call_hash
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -300,6 +301,7 @@ class AgentLoop:
         iteration = 0
         final_content = None
         tools_called = 0
+        seen_tool_hashes = set()
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -340,6 +342,18 @@ class AgentLoop:
 
             # Handle tool calls
             if response.has_tool_calls:
+                # Loop detection
+                current_hashes = [tool_call_hash(tc.name, tc.arguments) for tc in response.tool_calls]
+                if all(h in seen_tool_hashes for h in current_hashes):
+                    logger.warning("Infinite loop detected: agent repeating same tool calls")
+                    messages.append({
+                        "role": "user", 
+                        "content": "ERROR: You are repeating the same tool calls with the same arguments. This is an infinite loop. Please try a different approach or explain why you are stuck."
+                    })
+                    continue
+                for h in current_hashes:
+                    seen_tool_hashes.add(h)
+
                 tools_called += len(response.tool_calls)
                 # Add assistant message with tool calls
                 tool_call_dicts = [

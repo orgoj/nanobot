@@ -20,6 +20,7 @@
 
 ## 📢 News
 
+- **2026-02-12** 🛠️ Integrated advanced features from useful forks (`bot2046`, `MTAAP`, `Kirayu173`): Streaming, Parallel Tool Execution, Auto-continuation, and Context Factory.
 - **2026-02-10** 🎉 Released v0.1.3.post6 with improvements! Check the updates [notes](https://github.com/HKUDS/nanobot/releases/tag/v0.1.3.post6) and our [roadmap](https://github.com/HKUDS/nanobot/discussions/431).
 - **2026-02-09** 💬 Added Slack, Email, and QQ support — nanobot now supports multiple chat platforms!
 - **2026-02-08** 🔧 Refactored Providers—adding a new LLM provider now takes just 2 simple steps! Check [here](#providers).
@@ -764,6 +765,11 @@ PRs welcome! The codebase is intentionally small and readable. 🤗
 
 **Roadmap** — Pick an item and [open a PR](https://github.com/HKUDS/nanobot/pulls)!
 
+- [x] **Streaming** — Real-time LLM response output (from `bot2046`)
+- [x] **Parallel Tool Execution** — Concurrent tool calls (from `MTAAP`)
+- [x] **Auto-continuation** — Self-prompting on truncation (from `MTAAP`)
+- [x] **Context Factory** — Modifiable prompt construction (from `bot2046`)
+- [x] **TODO management** — Built-in task tracking (from `Kirayu173`)
 - [x] **Voice Transcription** — Support for Groq Whisper (Issue #13)
 - [ ] **Multi-modal** — See and hear (images, voice, video)
 - [ ] **Long-term memory** — Never forget important context
