@@ -11,9 +11,10 @@ if TYPE_CHECKING:
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
+from nanobot.agent.context_factory import ContextBuilderProtocol
 
 
-class ContextBuilder:
+class ContextBuilder(ContextBuilderProtocol):
     """
     Builds the context (system prompt + messages) for the agent.
     
@@ -135,6 +136,8 @@ Memory: memory/MEMORY.md | Daily notes: memory/YYYY-MM-DD.md"""
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
+        sender_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Build the complete message list for an LLM call.
@@ -146,6 +149,8 @@ Memory: memory/MEMORY.md | Daily notes: memory/YYYY-MM-DD.md"""
             media: Optional list of local file paths for images/media.
             channel: Current channel (telegram, feishu, etc.).
             chat_id: Current chat/user ID.
+            sender_id: ID of the message sender.
+            metadata: Additional metadata associated with the message.
 
         Returns:
             List of messages including system prompt.
@@ -156,6 +161,12 @@ Memory: memory/MEMORY.md | Daily notes: memory/YYYY-MM-DD.md"""
         system_prompt = self.build_system_prompt(skill_names)
         if channel and chat_id:
             system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
+        if sender_id:
+            system_prompt += f"\nSender ID: {sender_id}"
+        if metadata:
+            # Format metadata in a readable way
+            metadata_str = "\n".join([f"{k}: {v}" for k, v in metadata.items()])
+            system_prompt += f"\n## Metadata\n{metadata_str}"
         messages.append({"role": "system", "content": system_prompt})
 
         # History

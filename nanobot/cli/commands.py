@@ -140,10 +140,19 @@ def version_callback(value: bool):
 
 @app.callback()
 def main(
-    version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True),
+@app.callback()
+def main(
+    root: str = typer.Option(
+        None, "--root", help="Custom root directory for nanobot data"
+    ),
+    version: bool = typer.Option(
+        None, "--version", "-v", callback=version_callback, is_eager=True
+    ),
 ):
     """nanobot - Personal AI Assistant."""
-    pass
+    if root:
+        from nanobot.utils.helpers import set_root_path
+        set_root_path(root)
 
 
 # ============================================================================
@@ -293,8 +302,11 @@ def gateway(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
     """Start the nanobot gateway."""
+<<<<<<< HEAD
     from loguru import logger
 
+=======
+>>>>>>> bot2046/main
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.channels.manager import ChannelManager
@@ -310,7 +322,10 @@ def gateway(
 
         logging.basicConfig(level=logging.DEBUG)
 
+    from nanobot.utils.helpers import get_root_path
+    root_dir = get_root_path()
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
+    console.print(f"[dim]Root: {root_dir}[/dim]")
 
     config = load_config()
     setup_logging(config)
@@ -325,23 +340,14 @@ def gateway(
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:
         """Execute heartbeat through the agent."""
-        # Split target into channel:chat_id
-        target = config.agents.defaults.heartbeat_target
-        channel, chat_id = "cli", "direct"
-        if ":" in target:
-            channel, chat_id = target.split(":", 1)
-
-        return await agent.process_direct(
-            prompt, session_key="heartbeat", channel=channel, chat_id=chat_id
-        )
+        return await agent.process_direct(prompt, session_key="heartbeat")
 
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
-        interval_s=30 * 60,  # 30 minutes
+        interval_s=config.heartbeat.interval_s,
         enabled=True,
     )
-
     # Create agent with cron service
     agent = AgentLoop(
         bus=bus,
@@ -356,6 +362,7 @@ def gateway(
         restrict_to_workspace=config.tools.restrict_to_workspace,
         session_manager=session_manager,
         config=config,
+        context_config=config.context,
     )
 
     # Set cron callback (needs agent)
@@ -393,7 +400,7 @@ def gateway(
     if cron_status["jobs"] > 0:
         console.print(f"[green]✓[/green] Cron: {cron_status['jobs']} scheduled jobs")
 
-    console.print("[green]✓[/green] Heartbeat: every 30m")
+    console.print(f"[green]✓[/green] Heartbeat: every {config.heartbeat.interval_s // 60}m")
 
     async def run():
         try:
@@ -478,6 +485,7 @@ def agent(
         exec_config=config.tools.exec,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         config=config,
+        context_config=config.context,
     )
 
     # Show spinner when logs are off (no output to miss); skip when logs are on
@@ -490,11 +498,15 @@ def agent(
         return console.status("[dim]nanobot is thinking...[/dim]", spinner="dots")
 
     if message:
-        # Single message mode
+        # Single message mode with streaming
         async def run_once():
-            with _thinking_ctx():
-                response = await agent_loop.process_direct(message, session_id)
-            _print_agent_response(response, render_markdown=markdown)
+            console.print(f"\n{__logo__} ", end="")
+            await agent_loop.process_direct(
+                message,
+                session_id,
+                stream_callback=lambda chunk: console.print(chunk, end=""),
+            )
+            console.print()
 
         asyncio.run(run_once())
     else:
@@ -525,9 +537,13 @@ def agent(
                         console.print("\nGoodbye!")
                         break
 
-                    with _thinking_ctx():
-                        response = await agent_loop.process_direct(user_input, session_id)
-                    _print_agent_response(response, render_markdown=markdown)
+                    console.print(f"\n{__logo__} ", end="")
+                    await agent_loop.process_direct(
+                        user_input,
+                        session_id,
+                        stream_callback=lambda chunk: console.print(chunk, end=""),
+                    )
+                    console.print()
                 except KeyboardInterrupt:
                     _restore_terminal()
                     console.print("\nGoodbye!")
@@ -567,17 +583,6 @@ def channels_status():
 
     dc = config.channels.discord
     table.add_row("Discord", "✓" if dc.enabled else "✗", dc.gateway_url)
-
-    # Feishu
-    fs = config.channels.feishu
-    fs_config = f"app_id: {fs.app_id[:10]}..." if fs.app_id else "[dim]not configured[/dim]"
-    table.add_row("Feishu", "✓" if fs.enabled else "✗", fs_config)
-
-    # Mochat
-    mc = config.channels.mochat
-    mc_base = mc.base_url or "[dim]not configured[/dim]"
-    table.add_row("Mochat", "✓" if mc.enabled else "✗", mc_base)
-
     # Telegram
     tg = config.channels.telegram
     tg_config = f"token: {tg.token[:10]}..." if tg.token else "[dim]not configured[/dim]"
@@ -588,6 +593,57 @@ def channels_status():
     slack_config = "socket" if slack.app_token and slack.bot_token else "[dim]not configured[/dim]"
     table.add_row("Slack", "✓" if slack.enabled else "✗", slack_config)
 
+    # Feishu
+    feishu = config.channels.feishu
+    if feishu.app_id and feishu.app_secret:
+        feishu_config = f"app_id: {feishu.app_id[:10]}..."
+    else:
+        feishu_config = "[dim]not configured[/dim]"
+    table.add_row(
+        "Feishu",
+        "✓" if feishu.enabled else "✗",
+        feishu_config
+    )
+
+    # DingTalk
+    dingtalk = config.channels.dingtalk
+    dingtalk_config = "configured" if dingtalk.client_id and dingtalk.client_secret else "[dim]not configured[/dim]"
+    table.add_row(
+        "DingTalk",
+        "✓" if dingtalk.enabled else "✗",
+        dingtalk_config
+    )
+
+    # Email
+    email = config.channels.email
+    email_config = "configured" if email.imap_host and email.smtp_host else "[dim]not configured[/dim]"
+    table.add_row(
+        "Email",
+        "✓" if email.enabled else "✗",
+        email_config
+    )
+
+    # Mochat
+    mc = config.channels.mochat
+    mc_base = mc.base_url or "[dim]not configured[/dim]"
+    # Mochat
+    mc = config.channels.mochat
+    mc_base = mc.base_url or "[dim]not configured[/dim]"
+    table.add_row(
+        "Mochat",
+        "✓" if mc.enabled else "✗",
+        mc_base
+    )
+
+    # QQ
+    qq = config.channels.qq
+    qq_config = "configured" if qq.app_id and qq.secret else "[dim]not configured[/dim]"
+    table.add_row(
+        "QQ",
+        "✓" if qq.enabled else "✗",
+        qq_config
+    )
+
     console.print(table)
 
 
@@ -595,10 +651,10 @@ def _get_bridge_dir() -> Path:
     """Get the bridge directory, setting it up if needed."""
     import shutil
     import subprocess
+    from nanobot.utils.helpers import get_data_path
 
     # User's bridge location
-    user_bridge = Path.home() / ".nanobot" / "bridge"
-
+    user_bridge = get_data_path() / "bridge"
     # Check if already built
     if (user_bridge / "dist" / "index.js").exists():
         return user_bridge

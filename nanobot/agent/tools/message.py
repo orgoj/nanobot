@@ -45,6 +45,11 @@ class MessageTool(Tool):
                     "type": "string",
                     "description": "The message content to send"
                 },
+                "media": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: local file paths to send"
+                },
                 "channel": {
                     "type": "string",
                     "description": "Optional: target channel (telegram, discord, etc.)"
@@ -62,6 +67,7 @@ class MessageTool(Tool):
         content: str, 
         channel: str | None = None, 
         chat_id: str | None = None,
+        media: list[str] | None = None,
         **kwargs: Any
     ) -> str:
         channel = channel or self._default_channel
@@ -76,7 +82,8 @@ class MessageTool(Tool):
         msg = OutboundMessage(
             channel=channel,
             chat_id=chat_id,
-            content=content
+            content=content,
+            media=media or []
         )
         
         try:

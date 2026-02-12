@@ -49,19 +49,30 @@ class Session:
         # Get recent messages
         recent = self.messages[-max_messages:] if len(self.messages) > max_messages else self.messages
         
-        # Convert to LLM format (preserving tool calls and results)
+        # Convert to LLM format while preserving tool_calls and reasoning_content
+        # needed by reasoning models (Kimi K2.5, DeepSeek-R1, etc.)
         history = []
         for m in recent:
-            msg = {"role": m["role"], "content": m.get("content", "")}
+            msg: dict[str, Any] = {"role": m["role"], "content": m["content"]}
+            
+            # Preserve tool_calls if present (for assistant messages with tool use)
             if "tool_calls" in m:
                 msg["tool_calls"] = m["tool_calls"]
-            if "tool_call_id" in m:
-                msg["tool_call_id"] = m["tool_call_id"]
-            if "name" in m:
-                msg["name"] = m["name"]
+            
+            # Preserve reasoning_content if present (for reasoning models)
             if "reasoning_content" in m:
                 msg["reasoning_content"] = m["reasoning_content"]
+            
+            # Preserve tool_call_id and name for tool messages
+            if m.get("role") == "tool":
+                if "tool_call_id" in m:
+                    msg["tool_call_id"] = m["tool_call_id"]
+                if "name" in m:
+                    msg["name"] = m["name"]
+            
             history.append(msg)
+        
+        return history
         return history
     
     def clear(self) -> None:
@@ -79,7 +90,8 @@ class SessionManager:
     
     def __init__(self, workspace: Path):
         self.workspace = workspace
-        self.sessions_dir = ensure_dir(Path.home() / ".nanobot" / "sessions")
+        from nanobot.utils.helpers import get_data_path
+        self.sessions_dir = ensure_dir(get_data_path() / "sessions")
         self._cache: dict[str, Session] = {}
     
     def _get_session_path(self, key: str) -> Path:

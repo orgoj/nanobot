@@ -7,7 +7,6 @@ from typing import Any, TYPE_CHECKING
 
 from loguru import logger
 
-from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import Config
@@ -79,7 +78,12 @@ class ChannelManager:
             try:
                 from nanobot.channels.feishu import FeishuChannel
                 self.channels["feishu"] = FeishuChannel(
-                    self.config.channels.feishu, self.bus
+                    self.config.channels.feishu,
+                    self.bus,
+                    attachment_base_dir=self.config.workspace_path,
+                    attachment_allowed_dir=(
+                        self.config.workspace_path if self.config.tools.restrict_to_workspace else None
+                    ),
                 )
                 logger.info("Feishu channel enabled")
             except ImportError as e:

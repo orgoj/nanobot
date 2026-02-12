@@ -1,7 +1,9 @@
 """Agent loop: the core processing engine."""
 
 import asyncio
+import inspect
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +14,7 @@ if TYPE_CHECKING:
 from loguru import logger
 
 from nanobot.agent.context import ContextBuilder
+from nanobot.agent.context_factory import ContextBuilderFactory
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -22,9 +25,8 @@ from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.providers.base import LLMProvider
+from nanobot.providers.base import LLMProvider, LLMResponse
 from nanobot.session.manager import SessionManager
-
 
 class AgentLoop:
     """
@@ -52,9 +54,9 @@ class AgentLoop:
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
         config: "Config | None" = None,
+        context_config: "ContextConfig | None" = None,
     ):
-        from nanobot.config.schema import Config, ExecToolConfig
-
+        from nanobot.config.schema import Config, ContextConfig, ExecToolConfig
         self.bus = bus
         self.provider = provider
         self.workspace = workspace
@@ -65,8 +67,19 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         self.config = config or Config()
+        context_config = context_config or self.config.context
 
-        self.context = ContextBuilder(workspace, memory_config=self.config.memory)
+        # Initialize context builder
+        if context_config and (context_config.context_plugin_package != "nanobot.agent.context" or context_config.context_plugin_class != "ContextBuilder"):
+            self.context = ContextBuilderFactory.create(
+                workspace=workspace,
+                context_provider_package=context_config.context_plugin_package,
+                context_provider_class=context_config.context_plugin_class,
+                plugin_config=context_config.context_plugin_config,
+            )
+        else:
+            self.context = ContextBuilder(workspace, memory_config=self.config.memory)
+
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -142,15 +155,25 @@ class AgentLoop:
         while self._running:
             try:
                 # Wait for next message
-                msg = await asyncio.wait_for(self.bus.consume_inbound(), timeout=1.0)
+                msg = await asyncio.wait_for(
+                    self.bus.consume_inbound(),
+                    timeout=1.0,
+                )
+
+                # Check for streaming callback
+                stream_callback = None
+                if msg.stream_id:
+                    stream_callback = self.bus.get_stream_callback(msg.stream_id)
 
                 # Process it
                 try:
-                    response = await self._process_message(msg)
+                    response = await self._process_message(msg, stream_callback=stream_callback)
                     if response:
                         await self.bus.publish_outbound(response)
                 except Exception as e:
                     logger.error(f"Error processing message: {e}")
+                    if msg.stream_id:
+                        self.bus.mark_stream_done(msg.stream_id)
                     # Send error response
                     await self.bus.publish_outbound(
                         OutboundMessage(
@@ -167,12 +190,32 @@ class AgentLoop:
         self._running = False
         logger.info("Agent loop stopping")
 
-    async def _process_message(self, msg: InboundMessage) -> OutboundMessage | None:
+    def _build_messages_with_context(self, **kwargs: Any) -> list[dict[str, Any]]:
+        """Call context builder with only supported kwargs for compatibility."""
+        build_messages = self.context.build_messages
+        try:
+            sig = inspect.signature(build_messages)
+        except (TypeError, ValueError):
+            return build_messages(**kwargs)
+
+        if any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in sig.parameters.values()
+        ):
+            return build_messages(**kwargs)
+
+        filtered = {key: value for key, value in kwargs.items() if key in sig.parameters}
+        return build_messages(**filtered)
+
+    async def _process_message(
+        self, msg: InboundMessage, stream_callback: Callable[[str], Any] | None = None
+    ) -> OutboundMessage | None:
         """
         Process a single inbound message.
 
         Args:
             msg: The inbound message to process.
+            stream_callback: Optional callback for streaming content chunks.
 
         Returns:
             The response message, or None if no response needed.
@@ -207,12 +250,14 @@ class AgentLoop:
             cron_tool.set_context(msg.channel, msg.chat_id)
 
         # Build initial messages (use get_history for LLM-formatted messages)
-        messages = self.context.build_messages(
+        messages = self._build_messages_with_context(
             history=session.get_history(),
             current_message=msg.content,
             media=msg.media if msg.media else None,
             channel=msg.channel,
             chat_id=msg.chat_id,
+            sender_id=msg.sender_id,
+            metadata=msg.metadata,
         )
 
         # Agent loop
@@ -222,10 +267,39 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
 
-            # Call LLM
-            response = await self.provider.chat(
-                messages=messages, tools=self.tools.get_definitions(), model=self.model
-            )
+            if stream_callback:
+                # Use streaming provider
+                full_content = ""
+                full_reasoning = ""
+                tool_calls: list = []
+
+                async for chunk in self.provider.stream(
+                    messages=messages,
+                    tools=self.tools.get_definitions(),
+                    model=self.model,
+                ):
+                    if chunk.content:
+                        full_content += chunk.content
+                        res = stream_callback(chunk.content)
+                        if asyncio.iscoroutine(res):
+                            await res
+                    if chunk.reasoning_content:
+                        full_reasoning += chunk.reasoning_content
+                    if chunk.tool_calls:
+                        tool_calls.extend(chunk.tool_calls)
+
+                response = LLMResponse(
+                    content=full_content if full_content else None,
+                    reasoning_content=full_reasoning if full_reasoning else None,
+                    tool_calls=tool_calls,
+                )
+            else:
+                # Call LLM normally
+                response = await self.provider.chat(
+                    messages=messages,
+                    tools=self.tools.get_definitions(),
+                    model=self.model,
+                )
 
             # Handle tool calls
             if response.has_tool_calls:
@@ -247,25 +321,6 @@ class AgentLoop:
                     tool_call_dicts,
                     reasoning_content=response.reasoning_content,
                 )
-                
-                # Save assistant message to session
-                session.add_message(
-                    "assistant", 
-                    response.content, 
-                    tool_calls=tool_call_dicts, 
-                    reasoning_content=response.reasoning_content
-                )
-
-                # Send intermediate message to user if content is present and streaming is enabled
-                if response.content and self.config.agents.defaults.stream_intermediate_responses:
-                    await self.bus.publish_outbound(
-                        OutboundMessage(
-                            channel=msg.channel,
-                            chat_id=msg.chat_id,
-                            content=response.content,
-                            metadata=msg.metadata or {}
-                        )
-                    )
 
                 # Execute tools
                 for tool_call in response.tool_calls:
@@ -302,6 +357,14 @@ class AgentLoop:
         session.add_message("assistant", final_content)
         self.sessions.save(session)
 
+        # Mark stream as done so channel can close streaming session
+        if msg.stream_id:
+            self.bus.mark_stream_done(msg.stream_id)
+
+        # If streaming was used, content was already delivered via callback
+        # Return None to skip sending a duplicate OutboundMessage
+        if stream_callback:
+            return None
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,
@@ -332,7 +395,6 @@ class AgentLoop:
         # Use the origin session for context
         session_key = f"{origin_channel}:{origin_chat_id}"
         session = self.sessions.get_or_create(session_key)
-        session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
 
         # Update tool contexts
         message_tool = self.tools.get("message")
@@ -348,11 +410,13 @@ class AgentLoop:
             cron_tool.set_context(origin_channel, origin_chat_id)
 
         # Build messages with the announce content
-        messages = self.context.build_messages(
+        messages = self._build_messages_with_context(
             history=session.get_history(),
             current_message=msg.content,
             channel=origin_channel,
             chat_id=origin_chat_id,
+            sender_id=msg.sender_id,
+            metadata=msg.metadata,
         )
 
         # Agent loop (limited for announce handling)
@@ -381,24 +445,6 @@ class AgentLoop:
                     tool_call_dicts,
                     reasoning_content=response.reasoning_content,
                 )
-                
-                # Save assistant message to session
-                session.add_message(
-                    "assistant", 
-                    response.content, 
-                    tool_calls=tool_call_dicts, 
-                    reasoning_content=response.reasoning_content
-                )
-
-                # Send intermediate message to user if content is present and streaming is enabled
-                if response.content and self.config.agents.defaults.stream_intermediate_responses:
-                    await self.bus.publish_outbound(
-                        OutboundMessage(
-                            channel=origin_channel,
-                            chat_id=origin_chat_id,
-                            content=response.content
-                        )
-                    )
 
                 for tool_call in response.tool_calls:
                     args_str = self._log_tool_args(tool_call.arguments)
@@ -421,8 +467,11 @@ class AgentLoop:
         if final_content is None:
             final_content = "Background task completed."
 
-        # Save final assistant message to session
-        session.add_message("assistant", final_content)
+        # Save to session (mark as system message in history)
+        session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
+        # Preserve reasoning_content for reasoning models
+        reasoning_content = getattr(response, 'reasoning_content', None)
+        session.add_message("assistant", final_content, reasoning_content=reasoning_content)
         self.sessions.save(session)
 
         return OutboundMessage(
@@ -435,6 +484,7 @@ class AgentLoop:
         session_key: str = "cli:direct",
         channel: str = "cli",
         chat_id: str = "direct",
+        stream_callback: Callable[[str], Any] | None = None,
     ) -> str:
         """
         Process a message directly (for CLI or cron usage).
@@ -444,11 +494,17 @@ class AgentLoop:
             session_key: Session identifier.
             channel: Source channel (for context).
             chat_id: Source chat ID (for context).
+            stream_callback: Optional callback for streaming content chunks.
 
         Returns:
             The agent's response.
         """
-        msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
+        msg = InboundMessage(
+            channel=channel,
+            sender_id="user",
+            chat_id=chat_id,
+            content=content,
+        )
 
-        response = await self._process_message(msg)
+        response = await self._process_message(msg, stream_callback=stream_callback)
         return response.content if response else ""
