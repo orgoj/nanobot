@@ -1,12 +1,34 @@
 #!/bin/bash
-# Spuštění nanobot v Docker kontejneru s Telegram a Z.AI podporou
+# Spuštění nanobot v Docker kontejneru
 
 set -e
 
-CONTAINER_NAME="nanobot"
+# ========================================
+# Configuration (defaults, override in instance/config.sh)
+# ========================================
 IMAGE_NAME="nanobot"
+CONTAINER_NAME="${CONTAINER_NAME:-nanobot}"
+INSTANCE_DIR="${INSTANCE_DIR:-./instance}"
+TIMEZONE="${TIMEZONE:-}"  # Optional, e.g. "Europe/Prague"
 
-# Kontrola, zda kontejner už běží
+# Load instance config if exists
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/instance/config.sh" ]; then
+    source "$SCRIPT_DIR/instance/config.sh"
+fi
+
+# ========================================
+# Setup
+# ========================================
+cd "$SCRIPT_DIR"
+
+# Resolve symlinks to absolute paths
+NANOBOT_CONFIG="$(readlink -f "$INSTANCE_DIR/.nanobot")"
+NANOBOT_WORKSPACE="$(readlink -f "$INSTANCE_DIR/workspace")"
+
+# ========================================
+# Checks
+# ========================================
 if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     echo "⚠️  Kontejner '$CONTAINER_NAME' už existuje."
     read -p "Chcete ho zastavit a smazat? (y/n) " -n 1 -r
@@ -22,23 +44,37 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     fi
 fi
 
-# Kontrola konfigurace
-if [ ! -f ~/.nanobot/config.json ]; then
-    echo "❌ Chybí konfigurační soubor ~/.nanobot/config.json"
+mkdir -p "$NANOBOT_CONFIG"
+mkdir -p "$NANOBOT_WORKSPACE"
+
+if [ ! -f "$NANOBOT_CONFIG/config.json" ]; then
+    echo "❌ Chybí konfigurační soubor $NANOBOT_CONFIG/config.json"
     echo "   Vytvořte ho podle config.json.example"
     exit 1
 fi
 
-# Vytvoření workspace, pokud neexistuje
-mkdir -p ~/work/nanobot/workspace
-
+# ========================================
+# Run
+# ========================================
 echo "🚀 Spouštím nanobot kontejner..."
-docker run -d \
-  --name "$CONTAINER_NAME" \
-  -v ~/work/nanobot/.nanobot:/home/nanobot/.nanobot \
-  -v ~/work/nanobot/workspace:/home/nanobot/workspace \
-  --restart unless-stopped \
-  "$IMAGE_NAME"
+echo "   Config: $NANOBOT_CONFIG"
+echo "   Workspace: $NANOBOT_WORKSPACE"
+
+# Build docker run args
+DOCKER_ARGS=(
+  --name "$CONTAINER_NAME"
+  -v "$NANOBOT_CONFIG:/home/nanobot/.nanobot"
+  -v "$NANOBOT_WORKSPACE:/home/nanobot/workspace"
+  --restart unless-stopped
+)
+
+# Add timezone if specified
+if [ -n "$TIMEZONE" ]; then
+  DOCKER_ARGS+=(-e "TZ=$TIMEZONE")
+  echo "   Timezone: $TIMEZONE"
+fi
+
+docker run -d "${DOCKER_ARGS[@]}" "$IMAGE_NAME"
 
 echo "✅ Kontejner '$CONTAINER_NAME' běží!"
 echo ""
