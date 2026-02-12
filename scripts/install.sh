@@ -70,8 +70,8 @@ fi
 
 # 3. Application Install
 echo -e "\n${GREEN}[3/5] Installing Nanobot application...${NC}"
-# Use uv to sync dependencies
-$HOME/.local/bin/uv pip install .
+# 'uv sync' creates a local .venv and installs all dependencies automatically
+$HOME/.local/bin/uv sync
 
 if [ -d "bridge" ]; then
     echo "Building WhatsApp bridge..."
@@ -81,62 +81,69 @@ if [ -d "bridge" ]; then
     cd ..
 fi
 
-# 4. Systemd Service Setup
-echo -e "\n${GREEN}[4/5] Systemd Service Setup${NC}"
-read -p "Do you want to create/update a systemd service for Nanobot? (y/n) " -n 1 -r
+# 4. User Systemd Service Setup
+echo -e "\n${GREEN}[4/5] User Systemd Service Setup${NC}"
+read -p "Do you want to create/update a USER systemd service for Nanobot? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    SERVICE_PATH="/etc/systemd/system/nanobot.service"
+    USER_SERVICE_DIR="$HOME/.config/systemd/user"
+    SERVICE_PATH="$USER_SERVICE_DIR/nanobot.service"
     APP_DIR=$(pwd)
-    USER_NAME=$(whoami)
     
-    # Console logging question
-    CONSOLE_LOG=""
-    read -p "Mirror logs to physical console (/dev/tty1)? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        CONSOLE_LOG="StandardOutput=journal+console\nStandardError=journal+console\nTTYPath=/dev/tty1"
-    else
-        CONSOLE_LOG="StandardOutput=journal\nStandardError=journal"
-    fi
+    mkdir -p "$USER_SERVICE_DIR"
 
-    echo "Creating service file at $SERVICE_PATH..."
-    sudo tee $SERVICE_PATH > /dev/null << EOF
+    echo "Creating user service file at $SERVICE_PATH..."
+    cat << EOF > "$SERVICE_PATH"
 [Unit]
 Description=Nanobot AI Assistant
 After=network.target
 
 [Service]
 Type=simple
-User=$USER_NAME
 WorkingDirectory=$APP_DIR
-# Explicitly set PATH to include user's uv installation
 Environment=PATH=$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Use uv run to ensure the app runs in the correct environment
 ExecStart=$HOME/.local/bin/uv run nanobot gateway
 Restart=always
 RestartSec=10
-$CONSOLE_LOG
+StandardOutput=journal
+StandardError=journal
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
-    sudo systemctl daemon-reload
-    sudo systemctl enable nanobot.service
+    # Ensure XDG_RUNTIME_DIR is set for the session to talk to systemd user bus
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
     
-    # Allow service restart without password
-    echo "Configuring sudoers for nanobot restart..."
-    echo "$USER_NAME ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nanobot.service" | sudo tee /etc/sudoers.d/nanobot-service > /dev/null
-    sudo chmod 440 /etc/sudoers.d/nanobot-service
+    systemctl --user daemon-reload
+    systemctl --user enable nanobot.service
+    systemctl --user restart nanobot.service
+    
+    # Enable lingering (requires sudo once)
+    echo "Enabling lingering for $(whoami) to keep service running after logout..."
+    sudo loginctl enable-linger $(whoami)
 
-    echo -e "${GREEN}Service 'nanobot' configured.${NC}"
+    echo -e "${GREEN}User service 'nanobot' configured and enabled.${NC}"
+    echo "Control with: systemctl --user [start|stop|restart|status] nanobot"
+fi
+
+# 4.5 Create a wrapper script in ~/.local/bin
+if [ ! -f "$HOME/.local/bin/nanobot" ]; then
+    echo -e "\n${GREEN}[4.5/5] Creating 'nanobot' command wrapper...${NC}"
+    cat << EOF > $HOME/.local/bin/nanobot
+#!/bin/bash
+# Wrapper to run nanobot from anywhere using uv run
+(cd $APP_DIR && $HOME/.local/bin/uv run nanobot "\$@")
+EOF
+    chmod +x $HOME/.local/bin/nanobot
+    echo "Convenience wrapper created at ~/.local/bin/nanobot"
 fi
 
 # 5. Finalize
 echo -e "\n${GREEN}[5/5] Installation complete!${NC}"
 echo "---------------------------"
-echo "To restart the bot: sudo systemctl restart nanobot"
-echo "To see logs: journalctl -u nanobot -f"
+echo "To start the bot: systemctl --user start nanobot"
+echo "To see logs: journalctl --user -u nanobot -f"
 echo ""
 echo "Try running manually first to verify: uv run nanobot gateway"
