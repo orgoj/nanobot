@@ -578,6 +578,10 @@ nanobot gateway
 
 Config file: `~/.nanobot/config.json`
 
+### Full Configuration Example
+
+A complete example with all available options can be found in [config.example.json](./config.example.json).
+
 ### Providers
 
 > [!TIP]
@@ -776,6 +780,17 @@ PRs welcome! The codebase is intentionally small and readable. 🤗
 - [ ] **Better reasoning** — Multi-step planning and reflection
 - [ ] **More integrations** — Calendar and more
 - [ ] **Self-improvement** — Learn from feedback and mistakes
+
+### 🧠 Advanced Agentic Features
+
+Recently integrated advanced logic from community forks:
+
+- **Loop Guard** (from `ls1816`): Prevents infinite tool-calling loops by detecting repeated calls with identical arguments.
+- **Goal Planning** (from `nonewind`): Internal architecture for decomposing complex tasks into prioritized sub-goals.
+- **Parallel Tool Execution** (from `MTAAP`): Runs independent tool calls concurrently using `asyncio.gather`.
+- **Auto-continuation** (from `MTAAP`): Automatically prompts the agent to "Continue" when a response is truncated or signals unfinished work.
+- **Accountability Journaling** (from `pyrevo`): Strict system prompt rules requiring the agent to log significant actions and market analyses to daily markdown files.
+- **Trading Intel** (from `pyrevo`): Specialized `trading` skill with real-time crypto price and Fear & Greed index integration.
 
 ### Contributors
 

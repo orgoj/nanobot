@@ -176,6 +176,12 @@ def onboard():
 
     # Create default config
     config = Config()
+    # Add some descriptive defaults for onboarding
+    config.logging.file_logging_enabled = True
+    config.memory.max_long_term_lines = 100
+    config.memory.max_daily_lines = 200
+    config.memory.include_recent_days = 5
+    
     save_config(config)
     console.print(f"[green]✓[/green] Created config at {config_path}")
 
