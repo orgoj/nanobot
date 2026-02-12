@@ -452,12 +452,20 @@ def gateway(
                             channel=channel,
                             chat_id=chat_id,
                         )
+                        # Only publish if it's NOT a confirmation message
+                        # (agent already sent via message tool)
                         if channel != "cli" and resp:
-                            from nanobot.bus.events import OutboundMessage
-
-                            await bus.publish_outbound(
-                                OutboundMessage(channel=channel, chat_id=chat_id, content=resp)
+                            resp_lower = resp.lower()
+                            is_confirmation = any(
+                                word in resp_lower
+                                for word in ["odesláno", "sent", "delivered", "done", "✅"]
                             )
+                            if not is_confirmation:
+                                from nanobot.bus.events import OutboundMessage
+
+                                await bus.publish_outbound(
+                                    OutboundMessage(channel=channel, chat_id=chat_id, content=resp)
+                                )
                     except Exception as e:
                         logger.error(f"Error in startup prompt: {e}")
 
