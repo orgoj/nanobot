@@ -111,5 +111,21 @@ Recently integrated advanced logic from community forks:
 - **Auto-continuation** (`MTAAP`): Automatically prompts "Continue" on truncation.
 - **Accountability Journaling** (`pyrevo`): Enforces recording actions in daily memory files.
 
+## 🧪 Testing
+
+nanobot uses `pytest` for testing. You can run tests locally or in an isolated Docker container.
+
+### Local Testing
+```bash
+uv run pytest tests/
+```
+
+### Docker Testing (Isolated)
+Run tests in a clean, isolated environment without affecting your local system. This method uses `Dockerfile.test` to ensure all dependencies are correctly installed.
+
+```bash
+./test-docker.sh
+```
+
 ---
 <sub>nanobot is for educational, research, and technical exchange purposes only</sub>
