@@ -19,6 +19,8 @@ class ExecTool(Tool):
         deny_patterns: list[str] | None = None,
         allow_patterns: list[str] | None = None,
         restrict_to_workspace: bool = False,
+        allowed_paths: list[str] | None = None,
+        protected_paths: list[str] | None = None,
     ):
         self.timeout = timeout
         self.working_dir = working_dir
@@ -34,6 +36,8 @@ class ExecTool(Tool):
         ]
         self.allow_patterns = allow_patterns or []
         self.restrict_to_workspace = restrict_to_workspace
+        self.allowed_paths = [Path(p).expanduser().resolve() for p in (allowed_paths or [])]
+        self.protected_paths = [Path(p).expanduser().resolve() for p in (protected_paths or [])]
 
     @property
     def name(self) -> str:
@@ -115,23 +119,35 @@ class ExecTool(Tool):
             if not any(re.search(p, lower) for p in self.allow_patterns):
                 return "Error: Command blocked by safety guard (not in allowlist)"
 
-        if self.restrict_to_workspace:
+        # Extract paths from command for verification
+        win_paths = re.findall(r"[A-Za-z]:\\[^\\\"']+", cmd)
+        posix_paths = re.findall(r"(?:^|[\s|>])(/[^\s\"'>]+)", cmd)
+        all_cmd_paths = [Path(p.strip()).expanduser().resolve() for p in (win_paths + posix_paths)]
+
+        # Check protected paths
+        for p in all_cmd_paths:
+            for protected in self.protected_paths:
+                if p == protected or str(p).startswith(str(protected) + "/"):
+                    return f"Error: Command blocked - path {p} is protected"
+
+        # Check evolutionary mode allowed_paths
+        if self.allowed_paths:
+            for p in all_cmd_paths:
+                if p.is_absolute():
+                    is_allowed = any(
+                        p == allowed_path or str(p).startswith(str(allowed_path) + "/")
+                        for allowed_path in self.allowed_paths
+                    )
+                    if not is_allowed:
+                        allowed_list = ", ".join(str(p) for p in self.allowed_paths)
+                        return f"Error: Command blocked - path {p} is outside allowed paths: {allowed_list}"
+        
+        elif self.restrict_to_workspace:
             if "..\\" in cmd or "../" in cmd:
                 return "Error: Command blocked by safety guard (path traversal detected)"
 
             cwd_path = Path(cwd).resolve()
-
-            win_paths = re.findall(r"[A-Za-z]:\\[^\\\"']+", cmd)
-            # Only match absolute paths — avoid false positives on relative
-            # paths like ".venv/bin/python" where "/bin/python" would be
-            # incorrectly extracted by the old pattern.
-            posix_paths = re.findall(r"(?:^|[\s|>])(/[^\s\"'>]+)", cmd)
-
-            for raw in win_paths + posix_paths:
-                try:
-                    p = Path(raw.strip()).resolve()
-                except Exception:
-                    continue
+            for p in all_cmd_paths:
                 if p.is_absolute() and cwd_path not in p.parents and p != cwd_path:
                     return "Error: Command blocked by safety guard (path outside working dir)"
 

@@ -53,7 +53,7 @@ class TelegramChannel(BaseChannel):
 
         self._running = True
 
-        # Build the application with larger connection pool to avoid pool-timeout on long runs
+        # Build the application with larger connection pool
         req = HTTPXRequest(
             connection_pool_size=16, pool_timeout=5.0, connect_timeout=30.0, read_timeout=30.0
         )
@@ -150,36 +150,27 @@ class TelegramChannel(BaseChannel):
         if not message:
             return
 
-        # Extract text or caption
         content = message.text or message.caption or ""
-
-        # Handle media
         media = []
         if message.photo:
-            # Get the largest photo
             photo = message.photo[-1]
             file = await context.bot.get_file(photo.file_id)
-            media.append(
-                {
-                    "type": "image",
-                    "mime_type": "image/jpeg",
-                    "url": file.file_path,
-                    "file_id": photo.file_id,
-                }
-            )
+            media.append({
+                "type": "image",
+                "mime_type": "image/jpeg",
+                "url": file.file_path,
+                "file_id": photo.file_id,
+            })
         elif message.voice:
             voice = message.voice
             file = await context.bot.get_file(voice.file_id)
-            media.append(
-                {
-                    "type": "voice",
-                    "mime_type": voice.mime_type,
-                    "url": file.file_path,
-                    "file_id": voice.file_id,
-                }
-            )
+            media.append({
+                "type": "voice",
+                "mime_type": voice.mime_type,
+                "url": file.file_path,
+                "file_id": voice.file_id,
+            })
 
-        # Route to bus
         await self._handle_message(
             content=content,
             chat_id=str(chat_id),
@@ -191,8 +182,6 @@ class TelegramChannel(BaseChannel):
                 "username": user.username,
             },
         )
-
-        # Start typing indicator
         self._start_typing(chat_id)
 
     async def send(self, msg: OutboundMessage) -> None:
@@ -201,12 +190,9 @@ class TelegramChannel(BaseChannel):
             return
 
         chat_id = int(msg.chat_id)
-
-        # Stop typing indicator
         self._stop_typing(chat_id)
 
         try:
-            # Handle media in outbound if present
             if msg.media:
                 for item in msg.media:
                     media_type = item.get("type", "file")
@@ -216,11 +202,9 @@ class TelegramChannel(BaseChannel):
                     if not file_path and not content_data:
                         continue
 
-                    # If we have binary content but no path, create a temp file
                     temp_path = None
                     if content_data and not file_path:
                         from nanobot.utils.helpers import get_data_path
-
                         temp_dir = ensure_dir(get_data_path() / "temp")
                         ext = self._get_extension(media_type, item.get("mime_type"))
                         temp_path = temp_dir / f"telegram_out_{int(time.time())}{ext}"
@@ -248,15 +232,10 @@ class TelegramChannel(BaseChannel):
                         if temp_path and temp_path.exists():
                             temp_path.unlink()
 
-                # If we sent media, the content was likely sent as a caption.
-                # If not, send it as a separate message.
                 if not msg.content:
                     return
 
-            # Send text message (Markdown V2 support could be added)
-            # Standard Markdown is safer for general LLM output
             await self._app.bot.send_message(chat_id=chat_id, text=msg.content)
-
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
 
@@ -281,7 +260,7 @@ class TelegramChannel(BaseChannel):
             task.cancel()
 
     async def _on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Log polling / handler errors instead of silently swallowing them."""
+        """Log polling / handler errors."""
         logger.error(f"Telegram error: {context.error}")
 
     def _get_extension(self, media_type: str, mime_type: str | None) -> str:

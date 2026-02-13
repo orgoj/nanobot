@@ -1,13 +1,63 @@
-__pycache__
+# Python
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.egg-info
+*.pyw
+*.egg-info/
+*.egg
 dist/
 build/
-.git
+.venv/
+
+# Version control
+.git/
+.gitignore
+
+# Environment
 .env
-.assets
+.env.*
+
+# Assets and docs
+.assets/
+.DS_Store
+docs/
+case/
+*.png
+*.gif
+*.jpg
+*.jpeg
+
+# Testing
+.pytest_cache/
+tests/
+test/
+
+# Build artifacts
 node_modules/
 bridge/dist/
+poetry.lock
+uv.lock
+
+# Workspace (user data)
 workspace/
+
+# Configuration examples
+example.config.json
+config.json
+
+# Documentation
+COMMUNICATION.md
+SECURITY.md
+*.md
+!README.md
+!LICENSE
+
+# Build files
+Dockerfile*
+.dockerignore
+core_agent_lines.sh
+
+# Logs
+*.log
+botpy.log

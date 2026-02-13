@@ -35,7 +35,7 @@ class FeishuConfig(BaseModel):
     verification_token: str = ""  # Verification Token for event subscription (optional)
     allow_from: list[str] = Field(default_factory=list)  # Allowed user open_ids
     render_markdown: bool = True  # Render markdown as rich text (post format)
-    reaction_emoji: str = "THUMBSUP"  # Emoji reaction on received messages (e.g. THUMBSUP, OK, DONE, OnIt, HEART; empty to disable). Full list: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-reaction/emojis-introduce
+    reaction_emoji: str = "THUMBSUP"  # Emoji reaction on received messages
     streaming: bool = (
         True  # Enable streaming output with CardKit (requires cardkit:card:write permission)
     )
@@ -159,11 +159,9 @@ class QQConfig(BaseModel):
     """QQ channel configuration using botpy SDK."""
 
     enabled: bool = False
-    app_id: str = ""  # 机器人 ID (AppID) from q.qq.com
-    secret: str = ""  # 机器人密钥 (AppSecret) from q.qq.com
-    allow_from: list[str] = Field(
-        default_factory=list
-    )  # Allowed user openids (empty = public access)
+    app_id: str = ""  # AppID from q.qq.com
+    secret: str = ""  # AppSecret from q.qq.com
+    allow_from: list[str] = Field(default_factory=list)
 
 
 class ChannelsConfig(BaseModel):
@@ -216,7 +214,7 @@ class ProviderConfig(BaseModel):
 
     api_key: str = ""
     api_base: str | None = None
-    extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
+    extra_headers: dict[str, str] | None = None
 
 
 class ProvidersConfig(BaseModel):
@@ -228,12 +226,12 @@ class ProvidersConfig(BaseModel):
     deepseek: ProviderConfig = Field(default_factory=ProviderConfig)
     groq: ProviderConfig = Field(default_factory=ProviderConfig)
     zhipu: ProviderConfig = Field(default_factory=ProviderConfig)
-    dashscope: ProviderConfig = Field(default_factory=ProviderConfig)  # 阿里云通义千问
+    dashscope: ProviderConfig = Field(default_factory=ProviderConfig)
     vllm: ProviderConfig = Field(default_factory=ProviderConfig)
     gemini: ProviderConfig = Field(default_factory=ProviderConfig)
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
     minimax: ProviderConfig = Field(default_factory=ProviderConfig)
-    aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
+    aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)
 
 
 class GatewayConfig(BaseModel):
@@ -252,7 +250,7 @@ class HeartbeatConfig(BaseModel):
 class WebSearchConfig(BaseModel):
     """Web search tool configuration."""
 
-    api_key: str = ""  # Brave Search API key
+    api_key: str = ""
     max_results: int = 5
 
 
@@ -273,12 +271,225 @@ class ToolsConfig(BaseModel):
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
-    restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
+    restrict_to_workspace: bool = False
+    evolutionary: bool = False
+    allowed_paths: list[str] = Field(default_factory=list)
+    protected_paths: list[str] = Field(
+        default_factory=lambda: ["~/.nanobot/config.json"]
+    )
 
 
-class ContextConfig(BaseModel):
-    """Context configuration."""
+class RoutingTierConfig(BaseModel):
+    """Configuration for a routing tier."""
+    model: str
+    cost_per_mtok: float = 1.0
+    secondary_model: str | None = None
 
+
+class RoutingTiersConfig(BaseModel):
+    """Configuration for all routing tiers."""
+    simple: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
+        model="deepseek/deepseek-chat-v3-0324",
+        cost_per_mtok=0.27,
+        secondary_model="deepseek/deepseek-chat-v3.1"
+    ))
+    medium: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
+        model="openai/gpt-4.1-mini",
+        cost_per_mtok=0.40,
+        secondary_model="openai/gpt-4o-mini"
+    ))
+    complex: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
+        model="anthropic/claude-sonnet-4.5",
+        cost_per_mtok=3.0,
+        secondary_model="anthropic/claude-sonnet-4"
+    ))
+    reasoning: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
+        model="openai/o3",
+        cost_per_mtok=2.0,
+        secondary_model="openai/gpt-4o"
+    ))
+    coding: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
+        model="moonshotai/kimi-k2.5",
+        cost_per_mtok=0.45,
+        secondary_model="anthropic/claude-sonnet-4"
+    ))
+
+
+class ClientClassifierConfig(BaseModel):
+    """Configuration for client-side classifier."""
+    min_confidence: float = 0.85
+
+
+class LLMClassifierConfig(BaseModel):
+    """Configuration for LLM-assisted classifier."""
+    model: str = "gpt-4o-mini"
+    timeout_ms: int = 500
+    secondary_model: str | None = None
+
+
+class StickyRoutingConfig(BaseModel):
+    """Configuration for sticky routing behavior."""
+    context_window: int = 5
+    downgrade_confidence: float = 0.9
+
+
+class AutoCalibrationConfig(BaseModel):
+    """Configuration for auto-calibration."""
+    enabled: bool = True
+    interval: str = "24h"
+    min_classifications: int = 50
+    max_patterns: int = 100
+    backup_before_calibration: bool = True
+
+
+class RoutingConfig(BaseModel):
+    """Configuration for smart routing."""
+    enabled: bool = False
+    tiers: RoutingTiersConfig = Field(default_factory=RoutingTiersConfig)
+    client_classifier: ClientClassifierConfig = Field(default_factory=ClientClassifierConfig)
+    llm_classifier: LLMClassifierConfig = Field(default_factory=LLMClassifierConfig)
+    sticky: StickyRoutingConfig = Field(default_factory=StickyRoutingConfig)
+    auto_calibration: AutoCalibrationConfig = Field(default_factory=AutoCalibrationConfig)
+
+
+class BackgroundConfig(BaseModel):
+    """Background processing configuration for memory system."""
+    enabled: bool = True
+    interval_seconds: int = 60
+    quiet_threshold_seconds: int = 30
+
+
+class EmbeddingConfig(BaseModel):
+    """Embedding provider configuration."""
+    provider: str = "local"
+    local_model: str = "BAAI/bge-small-en-v1.5"
+    api_model: str = "qwen/qwen3-embedding-0.6b"
+    api_fallback: bool = True
+    cache_embeddings: bool = True
+    lazy_load: bool = True
+
+
+class ExtractionConfig(BaseModel):
+    """Entity extraction configuration."""
+    enabled: bool = True
+    provider: str = "gliner2"
+    gliner2_model: str = "fastino/gliner2-base-v1"
+    interval_seconds: int = 60
+    batch_size: int = 20
+    api_fallback: bool = False
+    api_model: str = ""
+
+
+class SummaryConfig(BaseModel):
+    """Summary node configuration."""
+    staleness_threshold: int = 10
+    max_refresh_batch: int = 20
+    model: str = ""
+
+
+class LearningConfig(BaseModel):
+    """Learning and preferences configuration."""
+    enabled: bool = True
+    decay_days: int = 14
+    max_learnings: int = 200
+    relevance_decay_rate: float = 0.05
+
+
+class MemoryContextConfig(BaseModel):
+    """Context assembly configuration for TurboMemory."""
+    total_budget: int = 4000
+    always_include_preferences: bool = True
+
+
+class SessionCompactionConfig(BaseModel):
+    """Session compaction configuration for long conversations."""
+    enabled: bool = True
+    mode: str = "summary"
+    threshold_percent: float = 0.8
+    target_tokens: int = 3000
+    min_messages: int = 10
+    max_messages: int = 100
+    preserve_recent: int = 20
+    preserve_tool_chains: bool = True
+    summary_chunk_size: int = 10
+    enable_memory_flush: bool = True
+
+
+class EnhancedContextConfig(BaseModel):
+    """Enhanced context assembly with real-time monitoring."""
+    max_context_tokens: int = 8000
+    response_buffer: int = 1000
+    memory_budget_percent: float = 0.35
+    history_budget_percent: float = 0.35
+    system_budget_percent: float = 0.20
+    enable_real_time_tracking: bool = True
+    show_context_percentage: bool = True
+    warning_threshold: float = 0.70
+    compaction_threshold: float = 0.80
+    enable_priority_truncation: bool = True
+    min_history_messages: int = 10
+    preserve_user_preferences: bool = True
+
+
+class PrivacyConfig(BaseModel):
+    """Privacy and security configuration."""
+    auto_redact_pii: bool = True
+    auto_redact_credentials: bool = True
+    excluded_patterns: list[str] = Field(default_factory=lambda: [
+        "password", "api_key", "secret", "token", "credential"
+    ])
+
+
+class SecurityConfig(BaseModel):
+    """Security and skill scanning configuration."""
+    enabled: bool = True
+    strict_mode: bool = False
+    block_on_critical: bool = True
+    block_on_high: bool = True
+    scan_on_install: bool = True
+    scan_on_load: bool = False
+    allowed_shell_commands: list[str] = Field(default_factory=lambda: [
+        "git", "npm", "node", "python", "python3", "pip", "pnpm", "yarn"
+    ])
+    blocked_patterns: list[str] = Field(default_factory=lambda: [
+        "curl.*\\|.*bash", "curl.*\\|.*sh", "wget.*\\|.*bash", "wget.*\\|.*sh",
+        "sudo", "rm -rf /", "rm -rf /*", "> /etc/", "> ~/.ssh/"
+    ])
+    allow_network_installs: bool = False
+    sandbox_skills: bool = False
+
+
+class TurboMemoryConfig(BaseModel):
+    """Turbo memory system configuration."""
+    enabled: bool = True
+    db_path: str = "memory/memory.db"
+
+    background: BackgroundConfig = Field(default_factory=BackgroundConfig)
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
+    extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
+    summary: SummaryConfig = Field(default_factory=SummaryConfig)
+    learning: LearningConfig = Field(default_factory=LearningConfig)
+    context: MemoryContextConfig = Field(default_factory=MemoryContextConfig)
+    privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
+    session_compaction: SessionCompactionConfig = Field(default_factory=SessionCompactionConfig)
+    enhanced_context: EnhancedContextConfig = Field(default_factory=EnhancedContextConfig)
+
+
+class WorkLogsConfig(BaseModel):
+    """Work logs configuration."""
+    enabled: bool = True
+    storage: str = "sqlite"
+    retention_days: int = 30
+    show_in_response: bool = False
+    default_mode: str = "summary"
+    log_tool_calls: bool = True
+    log_routing_decisions: bool = True
+    min_confidence_to_log: float = 0.0
+    beta: bool = False
+
+
+class LegacyContextConfig(BaseModel):
+    """Legacy context builder configuration."""
     context_plugin_package: str = "nanobot.agent.context"
     context_plugin_class: str = "ContextBuilder"
     context_plugin_config: dict[str, str] | None = None
@@ -286,21 +497,17 @@ class ContextConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     """Logging configuration."""
-
     file_logging_enabled: bool = False
-    file_log_path: str | None = (
-        None  # Optional custom path, defaults to {workspace}/logs/nanobot.log
-    )
-    log_full_messages: bool = False  # Log complete message content (no truncation)
-    log_full_tool_args: bool = False  # Log complete tool arguments (no truncation)
+    file_log_path: str | None = None
+    log_full_messages: bool = False
+    log_full_tool_args: bool = False
 
 
-class MemoryConfig(BaseModel):
-    """Memory context configuration."""
-
-    max_long_term_lines: int = 50  # Max lines from MEMORY.md to include in context
-    max_daily_lines: int = 100  # Max lines from daily notes to include in context
-    include_recent_days: int = 3  # Number of recent daily notes to include
+class LegacyMemoryConfig(BaseModel):
+    """Legacy file-based memory configuration."""
+    max_long_term_lines: int = 50
+    max_daily_lines: int = 100
+    include_recent_days: int = 3
 
 
 class Config(BaseSettings):
@@ -312,9 +519,13 @@ class Config(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
-    context: ContextConfig = Field(default_factory=ContextConfig)
+    routing: RoutingConfig = Field(default_factory=RoutingConfig)
+    memory: TurboMemoryConfig = Field(default_factory=TurboMemoryConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    work_logs: WorkLogsConfig = Field(default_factory=WorkLogsConfig)
+    context: LegacyContextConfig = Field(default_factory=LegacyContextConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
-    memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    legacy_memory: LegacyMemoryConfig = Field(default_factory=LegacyMemoryConfig)
 
     @property
     def workspace_path(self) -> Path:
@@ -324,7 +535,6 @@ class Config(BaseSettings):
         configured = Path(self.agents.defaults.workspace).expanduser()
         root = get_root_path()
 
-        # If workspace is the default and a custom root is set, use the custom root
         if str(root) != str(Path.home()) and str(configured) == str(
             Path.home() / ".nanobot" / "workspace"
         ):
@@ -340,7 +550,6 @@ class Config(BaseSettings):
 
         model_lower = (model or self.agents.defaults.model).lower()
 
-        # 1. Match by explicit prefix: "zhipu/glm-4" -> force zhipu config
         if "/" in model_lower:
             prefix = model_lower.split("/")[0]
             spec = find_by_name(prefix)
@@ -349,13 +558,11 @@ class Config(BaseSettings):
                 if p and p.api_key:
                     return p, spec.name
 
-        # 2. Match by keyword (order follows PROVIDERS registry)
         for spec in PROVIDERS:
             p = getattr(self.providers, spec.name, None)
             if p and any(kw in model_lower for kw in spec.keywords) and p.api_key:
                 return p, spec.name
 
-        # Fallback: gateways first, then others (follows registry order)
         for spec in PROVIDERS:
             p = getattr(self.providers, spec.name, None)
             if p and p.api_key:
@@ -363,34 +570,34 @@ class Config(BaseSettings):
         return None, None
 
     def get_provider(self, model: str | None = None) -> ProviderConfig | None:
-        """Get matched provider config (api_key, api_base, extra_headers). Falls back to first available."""
+        """Get matched provider config."""
         p, _ = self._match_provider(model)
         return p
 
     def get_provider_name(self, model: str | None = None) -> str | None:
-        """Get the registry name of the matched provider (e.g. "deepseek", "openrouter")."""
+        """Get the registry name of the matched provider."""
         _, name = self._match_provider(model)
         return name
 
     def get_api_key(self, model: str | None = None) -> str | None:
-        """Get API key for the given model. Falls back to first available key."""
+        """Get API key for the given model."""
         p = self.get_provider(model)
         return p.api_key if p else None
 
     def get_api_base(self, model: str | None = None) -> str | None:
-        """Get API base URL for the given model. Applies default URLs for known gateways."""
+        """Get API base URL for the given model."""
         from nanobot.providers.registry import find_by_name
 
         p, name = self._match_provider(model)
         if p and p.api_base:
             return p.api_base
-        # Only gateways get a default api_base here. Standard providers
-        # (like Moonshot) set their base URL via env vars in _setup_env
-        # to avoid polluting the global litellm.api_base.
         if name:
             spec = find_by_name(name)
             if spec and spec.is_gateway and spec.default_api_base:
                 return spec.default_api_base
         return None
 
-    model_config = ConfigDict(env_prefix="NANOBOT_", env_nested_delimiter="__")
+    model_config = ConfigDict(
+        env_prefix="NANOBOT_",
+        env_nested_delimiter="__"
+    )

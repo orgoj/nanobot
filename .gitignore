@@ -3,7 +3,6 @@
 *.pyc
 dist/
 build/
-docs/
 *.egg-info/
 *.egg
 *.pyc
@@ -22,6 +21,8 @@ tmpclaude-*/
 tmpclaude-*-cwd
 poetry.lock
 .pytest_cache/
+config.json
+example.config.json
 tests/
 botpy.log
 config.json

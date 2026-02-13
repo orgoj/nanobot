@@ -1,4 +1,4 @@
-"""Tool for managing scheduled jobs."""
+"""Cron tool for scheduling reminders, tasks, and routing calibration."""
 
 from typing import TYPE_CHECKING, Any
 
@@ -10,8 +10,14 @@ if TYPE_CHECKING:
 
 
 class CronTool(Tool):
-    """Tool to manage scheduled jobs."""
-
+    """
+    Tool to schedule reminders, recurring tasks, and routing calibration.
+    
+    Supports two job types:
+    1. User reminders (delivered back to user via chat/channel)
+    2. System calibration (optimizes routing performance in background)
+    """
+    
     def __init__(self, cron_service: "CronService"):
         self._cron = cron_service
         self._channel = None
@@ -29,9 +35,9 @@ class CronTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Schedule background tasks or reminders. "
-            "Supports periodic execution (every X seconds), "
-            "cron expressions ('0 9 * * *'), or one-time 'at' datetime."
+            "Schedule reminders, recurring tasks, and routing calibration. "
+            "Supports periodic execution (every X seconds), cron expressions ('0 9 * * *'), "
+            "or one-time 'at' datetime. Use 'calibrate' to schedule routing optimization."
         )
 
     @property
@@ -41,12 +47,12 @@ class CronTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["add", "list", "remove"],
-                    "description": "The action to perform.",
+                    "enum": ["add", "calibrate", "list", "remove"],
+                    "description": "Action to perform: 'add' for reminders/tasks, 'calibrate' for routing optimization",
                 },
                 "message": {
                     "type": "string",
-                    "description": "The message to send/process when the job runs.",
+                    "description": "Reminder message or task description (for add action)",
                 },
                 "every_seconds": {
                     "type": "integer",
@@ -54,7 +60,7 @@ class CronTool(Tool):
                 },
                 "cron_expr": {
                     "type": "string",
-                    "description": "Cron expression like '0 9 * * *' (for scheduled tasks)",
+                    "description": "Cron expression like '0 9 * * *'",
                 },
                 "at": {
                     "type": "string",
@@ -77,6 +83,8 @@ class CronTool(Tool):
     ) -> str:
         if action == "add":
             return self._add_job(message, every_seconds, cron_expr, at)
+        elif action == "calibrate":
+            return self._add_calibration_job(every_seconds, cron_expr)
         elif action == "list":
             return self._list_jobs()
         elif action == "remove":
@@ -95,7 +103,6 @@ class CronTool(Tool):
         if not self._channel or not self._chat_id:
             return "Error: no session context (channel/chat_id)"
 
-        # Build schedule
         delete_after = False
         if every_seconds:
             schedule = CronSchedule(kind="every", every_ms=every_seconds * 1000)
@@ -103,7 +110,6 @@ class CronTool(Tool):
             schedule = CronSchedule(kind="cron", expr=cron_expr)
         elif at:
             from datetime import datetime
-
             dt = datetime.fromisoformat(at)
             at_ms = int(dt.timestamp() * 1000)
             schedule = CronSchedule(kind="at", at_ms=at_ms)
@@ -122,28 +128,56 @@ class CronTool(Tool):
         )
         return f"Created job '{job.name}' (id: {job.id})"
 
+    def _add_calibration_job(self, every_seconds: int | None, cron_expr: str | None) -> str:
+        """Add a routing calibration job."""
+        if not every_seconds and not cron_expr:
+            cron_expr = "0 2 * * *"
+            schedule = CronSchedule(kind="cron", expr=cron_expr)
+            schedule_desc = "daily at 2:00 AM"
+        elif every_seconds:
+            schedule = CronSchedule(kind="every", every_ms=every_seconds * 1000)
+            schedule_desc = f"every {every_seconds}s"
+        elif cron_expr:
+            schedule = CronSchedule(kind="cron", expr=cron_expr)
+            schedule_desc = f"on schedule '{cron_expr}'"
+        else:
+            return "Error: either every_seconds or cron_expr is required"
+        
+        job = self._cron.add_job(
+            name="Routing Calibration",
+            schedule=schedule,
+            message="CALIBRATE_ROUTING",
+            deliver=False,
+            channel="internal",
+            to="calibration",
+        )
+        return f"Scheduled routing calibration {schedule_desc} (job id: {job.id})"
+
     def _list_jobs(self) -> str:
+        """List all jobs."""
         jobs = self._cron.list_jobs()
         if not jobs:
-            return "No active jobs."
-
-        lines = ["Active jobs:"]
+            return "No scheduled jobs."
+        
+        user_jobs = []
+        calibration_jobs = []
         for job in jobs:
-            sched = job.schedule
-            if sched.kind == "every":
-                info = f"every {sched.every_ms / 1000}s"
-            elif sched.kind == "cron":
-                info = f"cron '{sched.expr}'"
-            elif sched.kind == "at":
-                from datetime import datetime
-
-                dt = datetime.fromtimestamp(sched.at_ms / 1000)
-                info = f"at {dt.isoformat()}"
+            if job.payload.message == "CALIBRATE_ROUTING":
+                calibration_jobs.append(job)
             else:
-                info = "unknown schedule"
-
-            lines.append(f"- {job.id}: '{job.name}' ({info})")
-
+                user_jobs.append(job)
+        
+        lines = []
+        if user_jobs:
+            lines.append("📅 User Reminders:")
+            for job in user_jobs:
+                lines.append(f"  • {job.id}: '{job.name}' ({job.schedule.kind})")
+        if calibration_jobs:
+            if user_jobs: lines.append("")
+            lines.append("🔧 System Calibration:")
+            for job in calibration_jobs:
+                lines.append(f"  • {job.id}: '{job.name}' ({job.schedule.kind})")
+        
         return "\n".join(lines)
 
     def _remove_job(self, job_id: str | None) -> str:

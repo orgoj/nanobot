@@ -15,6 +15,7 @@ from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
+from nanobot.security.sanitizer import SecretSanitizer
 
 if TYPE_CHECKING:
     from nanobot.config.schema import ExecToolConfig
@@ -38,6 +39,9 @@ class SubagentManager:
         exec_config: "ExecToolConfig | None" = None,
         restrict_to_workspace: bool = False,
         max_iterations: int = 25,
+        evolutionary: bool = False,
+        allowed_paths: list[str] | None = None,
+        protected_paths: list[str] | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
 
@@ -49,7 +53,13 @@ class SubagentManager:
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
         self.max_iterations = max_iterations
+        self.evolutionary = evolutionary
+        self.allowed_paths = allowed_paths or []
+        self.protected_paths = protected_paths or []
         self._running_tasks: dict[str, asyncio.Task] = {}
+
+        # Initialize secret sanitizer for security
+        self.sanitizer = SecretSanitizer()
 
     async def spawn(self, task: str, origin: dict[str, str]) -> str:
         """
@@ -77,20 +87,31 @@ class SubagentManager:
             # Subagents have their own tools (subset of main agent tools)
             tools = ToolRegistry()
 
-            # File tools (restrict to workspace if configured)
-            allowed_dir = self.workspace if self.restrict_to_workspace else None
-            tools.register(ReadFileTool(allowed_dir=allowed_dir))
-            tools.register(WriteFileTool(allowed_dir=allowed_dir))
-            tools.register(EditFileTool(allowed_dir=allowed_dir))
-            tools.register(ListDirTool(allowed_dir=allowed_dir))
-
-            tools.register(
-                ExecTool(
+            # Determine tool restrictions based on evolutionary mode
+            if self.evolutionary and self.allowed_paths:
+                allowed_dirs = [Path(p).expanduser().resolve() for p in self.allowed_paths]
+                protected_dirs = [Path(p).expanduser().resolve() for p in self.protected_paths]
+                tools.register(ReadFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
+                tools.register(WriteFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
+                tools.register(EditFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
+                tools.register(ListDirTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
+                tools.register(ExecTool(
+                    working_dir=str(self.workspace),
+                    timeout=self.exec_config.timeout,
+                    allowed_paths=self.allowed_paths,
+                    protected_paths=self.protected_paths,
+                ))
+            else:
+                allowed_dir = self.workspace if self.restrict_to_workspace else None
+                tools.register(ReadFileTool(allowed_dir=allowed_dir))
+                tools.register(WriteFileTool(allowed_dir=allowed_dir))
+                tools.register(EditFileTool(allowed_dir=allowed_dir))
+                tools.register(ListDirTool(allowed_dir=allowed_dir))
+                tools.register(ExecTool(
                     working_dir=str(self.workspace),
                     timeout=self.exec_config.timeout,
                     restrict_to_workspace=self.restrict_to_workspace,
-                )
-            )
+                ))
 
             tools.register(WebSearchTool(api_key=self.brave_api_key))
             tools.register(WebFetchTool())
@@ -139,7 +160,8 @@ class SubagentManager:
                     # Execute tools
                     for tc in response.tool_calls:
                         args_str = json.dumps(tc.arguments, ensure_ascii=False)
-                        logger.debug(f"Subagent [{task_id}] tool call: {tc.name}({args_str[:100]})")
+                        sanitized_args = self.sanitizer.sanitize(args_str)
+                        logger.debug(f"Subagent [{task_id}] executing: {tc.name}({sanitized_args[:100]})")
                         result = await tools.execute(tc.name, tc.arguments)
                         messages.append(
                             {
@@ -194,7 +216,6 @@ Summarize this naturally for the user."""
         """Build a focused system prompt for the subagent."""
         import time as _time
         from datetime import datetime
-
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         tz = _time.strftime("%Z") or "UTC"
 
@@ -204,9 +225,6 @@ Summarize this naturally for the user."""
 {now} ({tz})
 
 You are a subagent spawned by the main agent to complete a specific task.
-
-## Your Task
-{task}
 
 ## How to Save Your Results
 - For extensive research, analysis or data, SAVE YOUR FINDINGS TO A FILE using the write_file tool.
