@@ -1,0 +1,21 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+
+# Instalace závislostí pro kompilaci
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential gcc git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Kopírujeme vše (tar stream v test-docker.sh zajistí, že uvidíme i věci v .dockerignore)
+COPY . .
+
+# Instalace včetně dev závislostí
+RUN uv pip install --system --no-cache .[dev]
+
+# Spouštíme jako non-root
+USER 1000
+ENV HOME=/tmp
+
+ENTRYPOINT ["pytest"]
+CMD ["tests/"]

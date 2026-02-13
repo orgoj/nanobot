@@ -131,7 +131,7 @@ async def test_run_marks_stream_done_on_error(tmp_path: Path) -> None:
     )
 
     done = await bus.wait_stream_done(stream_id, timeout=1)
-    agent.stop()
+    await agent.stop()
     await asyncio.wait_for(task, timeout=2)
 
     assert done is True

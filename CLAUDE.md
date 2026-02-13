@@ -115,9 +115,13 @@ bash core_agent_lines.sh
 
 - **Mandatory Quality Check**: After ANY code changes and before declaring a task as finished, you MUST run the formatter, linter, and tests. Everything must pass 100% to ensure the code is production-ready.
   ```bash
+  # Local check (fast)
   uv run ruff format .
   uv run ruff check --fix .
   uv run pytest tests/
+
+  # Docker check (isolated, recommended for final verification)
+  ./test-docker.sh
   ```
 
 ## Coding Style

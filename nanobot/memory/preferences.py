@@ -53,7 +53,7 @@ class PreferencesAggregator:
                 summary="No preferences learned yet.",
                 events_since_update=0,
             )
-            self.store.create_summary_node(node)
+            self.store.save_summary_node(node)
             logger.info("Created user_preferences summary node")
 
     async def aggregate_preferences(self) -> SummaryNode:
@@ -171,7 +171,7 @@ class PreferencesAggregator:
         node.last_updated = datetime.now()
         node.events_since_update = 0
 
-        self.store.update_summary_node(node)
+        self.store.save_summary_node(node)
 
         logger.info("Updated user_preferences summary")
         return node
@@ -213,7 +213,7 @@ class PreferencesAggregator:
         node = self.store.get_summary_node("user_preferences")
         if node:
             node.events_since_update += 1
-            self.store.update_summary_node(node)
+            self.store.save_summary_node(node)
 
     def get_preference_count(self) -> int:
         """Get total number of active preferences/learnings."""

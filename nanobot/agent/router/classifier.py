@@ -12,21 +12,21 @@ from .models import ClassificationScores, RoutingDecision, RoutingPattern, Routi
 
 # Default 14-dimension weights (sum to 1.0)
 DEFAULT_WEIGHTS = {
-    "reasoning_markers": 0.18,
-    "code_presence": 0.15,
+    "reasoning_markers": 0.25,
+    "code_presence": 0.20,
     "simple_indicators": 0.12,
-    "multi_step_patterns": 0.12,
-    "technical_terms": 0.10,
-    "token_count": 0.08,
+    "multi_step_patterns": 0.10,
+    "technical_terms": 0.08,
+    "token_count": 0.05,
     "creative_markers": 0.05,
-    "question_complexity": 0.05,
-    "constraint_count": 0.04,
+    "question_complexity": 0.04,
+    "constraint_count": 0.03,
     "imperative_verbs": 0.03,
-    "output_format": 0.03,
-    "domain_specificity": 0.02,
-    "reference_complexity": 0.02,
-    "negation_complexity": 0.01,
-    "social_interaction": 0.01,
+    "output_format": 0.02,
+    "domain_specificity": 0.01,
+    "reference_complexity": 0.01,
+    "negation_complexity": 0.005,
+    "social_interaction": 0.005,
 }
 
 
@@ -430,7 +430,7 @@ DEFAULT_PATTERNS = [
     # ========== CODING & DEVELOPMENT (TIER: CODING) ==========
     # Core coding actions
     RoutingPattern(
-        regex=r"\b(write code|implement|code review|unit test|integration test|e2e test|api endpoint|database query|algorithm|data structure|fix bug|optimize code|refactor|code generator)\b",
+        regex=r"\b(write|create|implement|code).*\b(function|class|method|script|app|program|code)\b|\b(write code|implement|code review|unit test|integration test|e2e test|api endpoint|database query|algorithm|data structure|fix bug|optimize code|refactor|code generator)\b",
         tier=RoutingTier.CODING,
         confidence=0.92,
         examples=["Write a function", "Code review", "Fix this bug", "Implement API"],
@@ -737,6 +737,7 @@ class ClientSideClassifier:
                 metadata={
                     "match_type": "exact_trie",
                     "match_source": "pre_filter",
+                    "scores": scores.to_dict(),
                 },
             )
             return decision, scores

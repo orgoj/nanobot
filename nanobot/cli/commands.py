@@ -324,6 +324,7 @@ def gateway(
         restrict_to_workspace=config.tools.restrict_to_workspace,
         session_manager=session_manager,
         config=config,
+        context_config=config.context,
     )
 
     async def on_cron_job(job: CronJob) -> str | None:
@@ -389,6 +390,7 @@ def agent(
         exec_config=config.tools.exec,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         config=config,
+        context_config=config.context,
     )
 
     if message:

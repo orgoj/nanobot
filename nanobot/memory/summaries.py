@@ -64,7 +64,7 @@ class SummaryTreeManager:
                 key="root",
                 summary="Root of conversation summary tree",
             )
-            self.store.create_summary_node(root)
+            self.store.save_summary_node(root)
             logger.info("Created root summary node")
 
     def increment_staleness(self, channel: str, entity_ids: list[str] = None):
@@ -80,7 +80,7 @@ class SummaryTreeManager:
 
         # Increment staleness
         channel_node.events_since_update += 1
-        self.store.update_summary_node(channel_node)
+        self.store.save_summary_node(channel_node)
 
         # Increment for specific entities
         if entity_ids:
@@ -88,7 +88,7 @@ class SummaryTreeManager:
                 entity_node = self.store.get_summary_node(f"entity:{entity_id}")
                 if entity_node:
                     entity_node.events_since_update += 1
-                    self.store.update_summary_node(entity_node)
+                    self.store.save_summary_node(entity_node)
 
         logger.debug(f"Incremented staleness for channel {channel}")
 
@@ -143,7 +143,7 @@ class SummaryTreeManager:
             node.events_since_update = 0
             node.last_updated = datetime.now()
 
-            self.store.update_summary_node(node)
+            self.store.save_summary_node(node)
 
             logger.info(f"Refreshed summary node: {node.key}")
 
@@ -202,7 +202,7 @@ class SummaryTreeManager:
                 parent_id="root",
                 summary=f"Summary for {channel} conversations",
             )
-            self.store.create_summary_node(node)
+            self.store.save_summary_node(node)
             logger.info(f"Created channel summary node: {channel}")
 
         return node

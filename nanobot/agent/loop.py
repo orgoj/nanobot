@@ -33,7 +33,13 @@ from nanobot.security.sanitizer import SecretSanitizer
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import Config, ExecToolConfig, MemoryConfig, RoutingConfig
+    from nanobot.config.schema import (
+        Config,
+        ContextConfig,
+        ExecToolConfig,
+        MemoryConfig,
+        RoutingConfig,
+    )
     from nanobot.cron.service import CronService
 
 
@@ -69,6 +75,7 @@ class AgentLoop:
         allowed_paths: list[str] | None = None,
         protected_paths: list[str] | None = None,
         memory_config: "MemoryConfig | None" = None,
+        context_config: "ContextConfig | None" = None,
     ):
         from nanobot.config.schema import Config, ExecToolConfig
 
@@ -94,7 +101,7 @@ class AgentLoop:
         self.work_log_manager = get_work_log_manager()
 
         # Initialize context builder
-        context_config = self.config.context
+        context_config = context_config or self.config.context
         if context_config and (
             context_config.context_plugin_package != "nanobot.agent.context"
             or context_config.context_plugin_class != "ContextBuilder"
@@ -641,7 +648,7 @@ class AgentLoop:
                 for tc in response.tool_calls:
                     tools_used.append(tc.name)
 
-                # Add assistant message
+                # Add assistant message with tool calls
                 tool_call_dicts = [
                     {
                         "id": tc.id,
@@ -827,6 +834,26 @@ class AgentLoop:
                 channel=origin_channel, chat_id=origin_chat_id, content=final_content
             )
         return None
+
+    async def process_direct(
+        self,
+        content: str,
+        session_key: str = "cli:default",
+        channel: str = "cli",
+        chat_id: str = "direct",
+        stream_callback: Callable[[str], Any] | None = None,
+    ) -> str | None:
+        """Process a message directly without going through the bus."""
+        msg = InboundMessage(
+            channel=channel,
+            chat_id=chat_id,
+            sender_id="user",
+            content=content,
+            session_key=session_key,
+        )
+
+        response = await self._process_message(msg, stream_callback=stream_callback)
+        return response.content if response else None
 
     async def _consolidate_memory(self, session: Session) -> None:
         """Consolidate session history if it exceeds window size."""
