@@ -16,7 +16,7 @@ from typing import Optional
 from loguru import logger
 
 from nanobot.config.schema import TurboMemoryConfig as MemoryConfig
-from nanobot.memory.models import Entity, Event, Fact, Learning, SummaryNode
+from nanobot.memory.models import Edge, Entity, Event, Fact, Learning, SummaryNode
 
 
 class TurboMemoryStore:
@@ -72,6 +72,18 @@ class TurboMemoryStore:
             self._conn.execute("PRAGMA foreign_keys=ON")
 
         return self._conn
+
+    def close(self) -> None:
+        """Close the database connection."""
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     def _init_db(self) -> None:
         """Initialize database schema."""
@@ -217,14 +229,17 @@ class TurboMemoryStore:
 
     # --- CRUD Operations for Events ---
 
-    def save_event(self, event: Event) -> None:
-        """Save an event to the database."""
+    def save_event(self, event: Event) -> str:
+        """Save an event to the database and return its ID."""
         conn = self._get_connection()
 
         # Pack embedding if present
         embedding_blob = None
         if event.content_embedding:
-            embedding_blob = event.content_embedding
+            if isinstance(event.content_embedding, list):
+                embedding_blob = self._pack_embedding(event.content_embedding)
+            else:
+                embedding_blob = event.content_embedding
 
         conn.execute(
             """
@@ -253,6 +268,11 @@ class TurboMemoryStore:
             ),
         )
         conn.commit()
+        return event.id
+
+    def _pack_embedding(self, vector: list[float]) -> bytes:
+        """Pack list of floats to binary blob."""
+        return struct.pack(f"{len(vector)}f", *vector)
 
     def get_event(self, event_id: str) -> Optional[Event]:
         """Retrieve an event by ID."""
@@ -279,12 +299,25 @@ class TurboMemoryStore:
         rows = conn.execute(query, params).fetchall()
         return [self._row_to_event(row) for row in rows]
 
+    def get_events_by_session(self, session_key: str, limit: int = 50) -> list[Event]:
+        """Retrieve events for a specific session (alias for get_recent_events)."""
+        return self.get_recent_events(limit=limit, session_key=session_key)
+
     def get_pending_events(self, limit: int = 20) -> list[Event]:
         """Get events that haven't been extracted yet."""
         conn = self._get_connection()
         rows = conn.execute(
             "SELECT * FROM events WHERE extraction_status = 'pending' ORDER BY timestamp ASC LIMIT ?",
             (limit,),
+        ).fetchall()
+        return [self._row_to_event(row) for row in rows]
+
+    def get_events_for_channel(self, channel: str, limit: int = 50) -> list[Event]:
+        """Get recent events for a specific channel."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT * FROM events WHERE channel = ? ORDER BY timestamp DESC LIMIT ?",
+            (channel, limit),
         ).fetchall()
         return [self._row_to_event(row) for row in rows]
 
@@ -296,6 +329,10 @@ class TurboMemoryStore:
 
     def _row_to_event(self, row: sqlite3.Row) -> Event:
         """Convert database row to Event object."""
+        emb = row["content_embedding"]
+        if emb and isinstance(emb, bytes):
+            emb = self._unpack_embedding(emb)
+
         return Event(
             id=row["id"],
             timestamp=datetime.fromisoformat(row["timestamp"]),
@@ -308,7 +345,7 @@ class TurboMemoryStore:
             person_id=row["person_id"],
             tool_name=row["tool_name"],
             extraction_status=row["extraction_status"],
-            content_embedding=row["content_embedding"],
+            content_embedding=emb,
             relevance_score=row["relevance_score"],
             last_accessed=datetime.fromisoformat(row["last_accessed"])
             if row["last_accessed"]
@@ -318,9 +355,21 @@ class TurboMemoryStore:
 
     # --- CRUD Operations for Entities ---
 
-    def save_entity(self, entity: Entity) -> None:
-        """Save or update an entity."""
+    def save_entity(self, entity: Entity) -> str:
+        """Save or update an entity and return its ID."""
         conn = self._get_connection()
+
+        name_emb = (
+            self._pack_embedding(entity.name_embedding)
+            if isinstance(entity.name_embedding, list)
+            else entity.name_embedding
+        )
+        desc_emb = (
+            self._pack_embedding(entity.description_embedding)
+            if isinstance(entity.description_embedding, list)
+            else entity.description_embedding
+        )
+
         conn.execute(
             """
             INSERT OR REPLACE INTO entities (
@@ -335,8 +384,8 @@ class TurboMemoryStore:
                 entity.entity_type,
                 json.dumps(entity.aliases),
                 entity.description,
-                entity.name_embedding,
-                entity.description_embedding,
+                name_emb,
+                desc_emb,
                 json.dumps(entity.source_event_ids),
                 entity.event_count,
                 entity.first_seen.isoformat() if entity.first_seen else None,
@@ -344,14 +393,48 @@ class TurboMemoryStore:
             ),
         )
         conn.commit()
+        return entity.id
 
-    def get_entity_by_name(self, name: str) -> Optional[Entity]:
-        """Retrieve an entity by its canonical name."""
+    def update_entity(self, entity: Entity) -> None:
+        """Update an existing entity (alias for save_entity)."""
+        self.save_entity(entity)
+
+    def get_entity(self, entity_id: str) -> Optional[Entity]:
+        """Retrieve an entity by ID."""
         conn = self._get_connection()
-        row = conn.execute("SELECT * FROM entities WHERE name = ?", (name,)).fetchone()
+        row = conn.execute("SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone()
 
         if row:
             return self._row_to_entity(row)
+        return None
+
+    def get_entity_by_name(self, name: str) -> Optional[Entity]:
+        """Retrieve an entity by its canonical name (case-insensitive)."""
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT * FROM entities WHERE name = ? COLLATE NOCASE", (name,)
+        ).fetchone()
+
+        if row:
+            return self._row_to_entity(row)
+        return None
+
+    def find_entity_by_name(self, name: str) -> Optional[Entity]:
+        """Find entity by name or alias (case-insensitive)."""
+        # Try exact name first
+        entity = self.get_entity_by_name(name)
+        if entity:
+            return entity
+
+        # Try aliases
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT * FROM entities WHERE aliases LIKE ?", (f'%"{name}"%',)
+        ).fetchall()
+        for row in rows:
+            entity = self._row_to_entity(row)
+            if any(a.lower() == name.lower() for a in entity.aliases):
+                return entity
         return None
 
     def get_all_entities(self, limit: int = 100) -> list[Entity]:
@@ -362,16 +445,109 @@ class TurboMemoryStore:
         ).fetchall()
         return [self._row_to_entity(row) for row in rows]
 
+    def get_entities_by_type(self, entity_type: str, limit: int = 100) -> list[Entity]:
+        """Retrieve entities of a specific type."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT * FROM entities WHERE entity_type = ? ORDER BY event_count DESC LIMIT ?",
+            (entity_type, limit),
+        ).fetchall()
+        return [self._row_to_entity(row) for row in rows]
+
+    def delete_entity(self, entity_id: str) -> None:
+        """Delete an entity and its related facts and edges."""
+        conn = self._get_connection()
+        conn.execute(
+            "DELETE FROM facts WHERE subject_entity_id = ? OR object_entity_id = ?",
+            (entity_id, entity_id),
+        )
+        conn.execute(
+            "DELETE FROM edges WHERE source_entity_id = ? OR target_entity_id = ?",
+            (entity_id, entity_id),
+        )
+        conn.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+        conn.commit()
+
+    def search_entities_by_name(self, query: str, limit: int = 10) -> list[Entity]:
+        """Search entities by name or alias using fuzzy match (LIKE)."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT * FROM entities WHERE name LIKE ? OR aliases LIKE ? LIMIT ?",
+            (f"%{query}%", f"%{query}%", limit),
+        ).fetchall()
+        return [self._row_to_entity(row) for row in rows]
+
+    def search_similar_entities(
+        self, query_embedding: bytes, limit: int = 10, threshold: float = 0.5
+    ) -> list[Entity]:
+        """Search entities by semantic similarity of their name or description."""
+        conn = self._get_connection()
+        # Search both name and description embeddings
+        rows = conn.execute(
+            "SELECT * FROM entities WHERE name_embedding IS NOT NULL OR description_embedding IS NOT NULL"
+        ).fetchall()
+
+        results = []
+        query_vector = self._unpack_embedding(query_embedding)
+
+        for row in rows:
+            max_sim = 0.0
+            if row["name_embedding"]:
+                sim = self._cosine_similarity(
+                    query_vector, self._unpack_embedding(row["name_embedding"])
+                )
+                max_sim = max(max_sim, sim)
+            if row["description_embedding"]:
+                sim = self._cosine_similarity(
+                    query_vector, self._unpack_embedding(row["description_embedding"])
+                )
+                max_sim = max(max_sim, sim)
+
+            if max_sim >= threshold:
+                results.append((self._row_to_entity(row), max_sim))
+
+        results.sort(key=lambda x: x[1], reverse=True)
+        return [r[0] for r in results[:limit]]
+
+    def get_entities_for_channel(self, channel: str, limit: int = 20) -> list[Entity]:
+        """
+        Get entities mentioned in a specific channel.
+
+        Note: This is an approximation based on source_event_ids.
+        """
+        conn = self._get_connection()
+        # Find entities whose source_event_ids contain events from this channel
+        # This is a bit complex in SQLite without JSON1 extension or normalized join table
+        # For now, we do a simpler version: get recent events for channel, then get entities
+        rows = conn.execute(
+            """
+            SELECT DISTINCT e.* FROM entities e
+            JOIN events ev ON ev.channel = ?
+            WHERE e.source_event_ids LIKE '%' || ev.id || '%'
+            ORDER BY e.event_count DESC LIMIT ?
+            """,
+            (channel, limit),
+        ).fetchall()
+        return [self._row_to_entity(row) for row in rows]
+
     def _row_to_entity(self, row: sqlite3.Row) -> Entity:
         """Convert database row to Entity object."""
+        name_emb = row["name_embedding"]
+        if name_emb and isinstance(name_emb, bytes):
+            name_emb = self._unpack_embedding(name_emb)
+
+        desc_emb = row["description_embedding"]
+        if desc_emb and isinstance(desc_emb, bytes):
+            desc_emb = self._unpack_embedding(desc_emb)
+
         return Entity(
             id=row["id"],
             name=row["name"],
             entity_type=row["entity_type"],
             aliases=json.loads(row["aliases"]),
             description=row["description"],
-            name_embedding=row["name_embedding"],
-            description_embedding=row["description_embedding"],
+            name_embedding=name_emb,
+            description_embedding=desc_emb,
             source_event_ids=json.loads(row["source_event_ids"]),
             event_count=row["event_count"],
             first_seen=datetime.fromisoformat(row["first_seen"]) if row["first_seen"] else None,
@@ -413,6 +589,89 @@ class TurboMemoryStore:
             "SELECT * FROM facts WHERE subject_entity_id = ?", (entity_id,)
         ).fetchall()
         return [self._row_to_fact(row) for row in rows]
+
+    def get_facts_for_subject(self, subject_id: str) -> list[Fact]:
+        """Retrieve all facts for a subject (alias for get_facts_for_entity)."""
+        return self.get_facts_for_entity(subject_id)
+
+    def update_fact(self, fact: Fact) -> None:
+        """Update an existing fact (alias for save_fact)."""
+        self.save_fact(fact)
+
+    # --- CRUD Operations for Edges ---
+
+    def save_edge(self, edge: Edge) -> None:
+        """Save or update an edge."""
+        conn = self._get_connection()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO edges (
+                id, source_entity_id, target_entity_id, relation,
+                relation_type, strength, source_event_ids, first_seen, last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                edge.id,
+                edge.source_entity_id,
+                edge.target_entity_id,
+                edge.relation,
+                edge.relation_type,
+                edge.strength,
+                json.dumps(edge.source_event_ids),
+                edge.first_seen.isoformat() if edge.first_seen else None,
+                edge.last_seen.isoformat() if edge.last_seen else None,
+            ),
+        )
+        conn.commit()
+
+    def create_edge(self, edge: Edge) -> None:
+        """Create a new edge (alias for save_edge)."""
+        self.save_edge(edge)
+
+    def update_edge(self, edge: Edge) -> None:
+        """Update an existing edge (alias for save_edge)."""
+        self.save_edge(edge)
+
+    def get_edge(self, source_id: str, target_id: str, relation_type: str) -> Optional[Edge]:
+        """Retrieve an edge between two entities of a specific type."""
+        conn = self._get_connection()
+        row = conn.execute(
+            """
+            SELECT * FROM edges
+            WHERE source_entity_id = ? AND target_entity_id = ? AND relation_type = ?
+            """,
+            (source_id, target_id, relation_type),
+        ).fetchone()
+
+        if row:
+            return self._row_to_edge(row)
+        return None
+
+    def get_edges_for_entity(self, entity_id: str, min_strength: float = 0.0) -> list[Edge]:
+        """Retrieve all edges connected to an entity."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            """
+            SELECT * FROM edges
+            WHERE (source_entity_id = ? OR target_entity_id = ?) AND strength >= ?
+            """,
+            (entity_id, entity_id, min_strength),
+        ).fetchall()
+        return [self._row_to_edge(row) for row in rows]
+
+    def _row_to_edge(self, row: sqlite3.Row) -> Edge:
+        """Convert database row to Edge object."""
+        return Edge(
+            id=row["id"],
+            source_entity_id=row["source_entity_id"],
+            target_entity_id=row["target_entity_id"],
+            relation=row["relation"],
+            relation_type=row["relation_type"],
+            strength=row["strength"],
+            source_event_ids=json.loads(row["source_event_ids"]),
+            first_seen=datetime.fromisoformat(row["first_seen"]) if row["first_seen"] else None,
+            last_seen=datetime.fromisoformat(row["last_seen"]) if row["last_seen"] else None,
+        )
 
     def _row_to_fact(self, row: sqlite3.Row) -> Fact:
         """Convert database row to Fact object."""
@@ -476,6 +735,12 @@ class TurboMemoryStore:
 
         return [self._row_to_summary_node(row) for row in rows]
 
+    def get_all_summary_nodes(self) -> list[SummaryNode]:
+        """Retrieve all summary nodes from the database."""
+        conn = self._get_connection()
+        rows = conn.execute("SELECT * FROM summary_nodes").fetchall()
+        return [self._row_to_summary_node(row) for row in rows]
+
     def _row_to_summary_node(self, row: sqlite3.Row) -> SummaryNode:
         """Convert database row to SummaryNode object."""
         return SummaryNode(
@@ -496,6 +761,13 @@ class TurboMemoryStore:
     def save_learning(self, learning: Learning) -> None:
         """Save or update a learning record."""
         conn = self._get_connection()
+
+        content_emb = (
+            self._pack_embedding(learning.content_embedding)
+            if isinstance(learning.content_embedding, list)
+            else learning.content_embedding
+        )
+
         conn.execute(
             """
             INSERT OR REPLACE INTO learnings (
@@ -513,7 +785,7 @@ class TurboMemoryStore:
                 learning.tool_name,
                 learning.recommendation,
                 learning.superseded_by,
-                learning.content_embedding,
+                content_emb,
                 learning.created_at.isoformat() if learning.created_at else None,
                 learning.updated_at.isoformat() if learning.updated_at else None,
                 learning.relevance_score,
@@ -522,6 +794,33 @@ class TurboMemoryStore:
             ),
         )
         conn.commit()
+
+    def create_learning(self, learning: Learning) -> None:
+        """Create a new learning (alias for save_learning)."""
+        self.save_learning(learning)
+
+    def update_learning(self, learning: Learning) -> None:
+        """Update an existing learning (alias for save_learning)."""
+        self.save_learning(learning)
+
+    def get_learning(self, learning_id: str) -> Optional[Learning]:
+        """Retrieve a learning record by ID."""
+        conn = self._get_connection()
+        row = conn.execute("SELECT * FROM learnings WHERE id = ?", (learning_id,)).fetchone()
+
+        if row:
+            return self._row_to_learning(row)
+        return None
+
+    def get_all_learnings(self, active_only: bool = False) -> list[Learning]:
+        """Retrieve all learning records."""
+        conn = self._get_connection()
+        query = "SELECT * FROM learnings"
+        if active_only:
+            query += " WHERE superseded_by IS NULL"
+
+        rows = conn.execute(query).fetchall()
+        return [self._row_to_learning(row) for row in rows]
 
     def get_active_learnings(self, limit: int = 20) -> list[Learning]:
         """Get most relevant active learnings."""
@@ -537,8 +836,33 @@ class TurboMemoryStore:
         ).fetchall()
         return [self._row_to_learning(row) for row in rows]
 
+    def get_high_relevance_learnings(
+        self, min_score: float = 0.5, limit: int = 20
+    ) -> list[Learning]:
+        """Get learnings with relevance score above threshold."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            """
+            SELECT * FROM learnings
+            WHERE superseded_by IS NULL AND relevance_score >= ?
+            ORDER BY relevance_score DESC LIMIT ?
+            """,
+            (min_score, limit),
+        ).fetchall()
+        return [self._row_to_learning(row) for row in rows]
+
+    def delete_learning(self, learning_id: str) -> None:
+        """Delete a learning record."""
+        conn = self._get_connection()
+        conn.execute("DELETE FROM learnings WHERE id = ?", (learning_id,))
+        conn.commit()
+
     def _row_to_learning(self, row: sqlite3.Row) -> Learning:
         """Convert database row to Learning object."""
+        emb = row["content_embedding"]
+        if emb and isinstance(emb, bytes):
+            emb = self._unpack_embedding(emb)
+
         return Learning(
             id=row["id"],
             content=row["content"],
@@ -548,7 +872,7 @@ class TurboMemoryStore:
             tool_name=row["tool_name"],
             recommendation=row["recommendation"],
             superseded_by=row["superseded_by"],
-            content_embedding=row["content_embedding"],
+            content_embedding=emb,
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
             updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None,
             relevance_score=row["relevance_score"],
@@ -559,6 +883,38 @@ class TurboMemoryStore:
         )
 
     # --- Search and Retrieval ---
+
+    def search_events(
+        self,
+        query_embedding: bytes | list[float],
+        session_key: Optional[str] = None,
+        limit: int = 10,
+        threshold: float = 0.5,
+    ) -> list[tuple[Event, float]]:
+        """Search events by semantic similarity (returns events with scores)."""
+        if isinstance(query_embedding, list):
+            query_embedding = self._pack_embedding(query_embedding)
+        return self.semantic_search_events(query_embedding, session_key, limit, threshold)
+
+    def search_similar_events(
+        self,
+        query_embedding: bytes | list[float],
+        session_key: Optional[str] = None,
+        limit: int = 10,
+        min_relevance: float = 0.5,
+    ) -> list[Event]:
+        """Search events by semantic similarity (returns only events)."""
+        results = self.search_events(query_embedding, session_key, limit, min_relevance)
+        return [r[0] for r in results]
+
+    def search_events_by_text(self, query: str, limit: int = 20) -> list[Event]:
+        """Search events by text content using LIKE."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT * FROM events WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?",
+            (f"%{query}%", limit),
+        ).fetchall()
+        return [self._row_to_event(row) for row in rows]
 
     def semantic_search_events(
         self,
@@ -627,6 +983,11 @@ class TurboMemoryStore:
         stats["facts"] = conn.execute("SELECT count(*) FROM facts").fetchone()[0]
         stats["summary_nodes"] = conn.execute("SELECT count(*) FROM summary_nodes").fetchone()[0]
         stats["learnings"] = conn.execute("SELECT count(*) FROM learnings").fetchone()[0]
+
+        # For test compatibility
+        stats["pending_extractions"] = conn.execute(
+            "SELECT count(*) FROM events WHERE extraction_status = 'pending'"
+        ).fetchone()[0]
 
         # Entity types breakdown
         entity_summary = conn.execute(
