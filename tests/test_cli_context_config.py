@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from nanobot.config.schema import Config, ContextConfig
+from nanobot.config.schema import Config, LegacyContextConfig as ContextConfig
 
 
 def _fake_asyncio_run(coro):

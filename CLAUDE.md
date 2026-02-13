@@ -113,10 +113,11 @@ bash core_agent_lines.sh
 
 ## Development Workflow
 
-- **Mandatory Linting & Formatting**: After ANY code changes and before declaring a task as finished, you MUST run the formatter and linter. This catches many common errors and ensures code quality.
+- **Mandatory Quality Check**: After ANY code changes and before declaring a task as finished, you MUST run the formatter, linter, and tests. Everything must pass 100% to ensure the code is production-ready.
   ```bash
   uv run ruff format .
   uv run ruff check --fix .
+  uv run pytest tests/
   ```
 
 ## Coding Style

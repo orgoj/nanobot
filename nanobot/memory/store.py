@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 from loguru import logger
 
-from nanobot.config.schema import MemoryConfig
+from nanobot.config.schema import TurboMemoryConfig as MemoryConfig
 from nanobot.memory.models import Edge, Entity, Event, Fact, Learning, SummaryNode
 
 
