@@ -111,6 +111,42 @@ Recently integrated advanced logic from community forks:
 - **Auto-continuation** (`MTAAP`): Automatically prompts "Continue" on truncation.
 - **Accountability Journaling** (`pyrevo`): Enforces recording actions in daily memory files.
 
+## 🌐 Web Tools Configuration
+
+Nanobot supports multiple providers for web search and content fetching.
+
+### Search Providers
+- **Brave Search** (default): Uses Brave Search API. Requires `BRAVE_API_KEY`.
+- **Z.AI Search**: Uses Z.AI MCP via HTTP. Requires `Z_AI_API_KEY`.
+
+### Fetch Providers
+- **Readability** (default): Uses `readability-lxml` to extract content.
+- **Z.AI Web Reader**: Uses Z.AI MCP via HTTP. Requires `Z_AI_API_KEY`.
+
+### Configuration Example
+To use Z.AI tools, update your `config.json`:
+
+```json
+{
+  "tools": {
+    "web": {
+      "search": {
+        "provider": "zai",
+        "zai_api_key": "your-key-here",
+        "max_results": 5
+      },
+      "fetch": {
+        "provider": "zai",
+        "zai_api_key": "your-key-here",
+        "max_chars": 50000
+      }
+    }
+  }
+}
+```
+
+You can also set `Z_AI_API_KEY` environment variable instead of putting it in config.
+
 ## 🧪 Testing
 
 nanobot uses `pytest` for testing. You can run tests locally or in an isolated Docker container.

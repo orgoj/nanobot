@@ -25,6 +25,7 @@ from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.todo import TodoTool
 from nanobot.agent.tools.update_config import UpdateConfigTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.tools.zai_web import ZaiWebFetchTool, ZaiWebSearchTool
 from nanobot.agent.work_log_manager import LogLevel, get_work_log_manager
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
@@ -265,8 +266,35 @@ class AgentLoop:
                 )
             )
 
-        self.tools.register(WebSearchTool(api_key=self.brave_api_key))
-        self.tools.register(WebFetchTool())
+        # Web Search
+        search_config = self.config.tools.web.search
+        if search_config.provider == "zai":
+            api_key = search_config.zai_api_key or search_config.api_key
+            self.tools.register(
+                ZaiWebSearchTool(
+                    api_key=api_key,
+                    base_url=search_config.zai_base_url if search_config.zai_base_url else None,
+                    max_results=search_config.max_results,
+                )
+            )
+        else:
+            self.tools.register(
+                WebSearchTool(api_key=self.brave_api_key, max_results=search_config.max_results)
+            )
+
+        # Web Fetch
+        fetch_config = self.config.tools.web.fetch
+        if fetch_config.provider == "zai":
+            api_key = fetch_config.zai_api_key or search_config.zai_api_key or search_config.api_key
+            self.tools.register(
+                ZaiWebFetchTool(
+                    api_key=api_key,
+                    base_url=fetch_config.zai_base_url if fetch_config.zai_base_url else None,
+                    max_chars=fetch_config.max_chars,
+                )
+            )
+        else:
+            self.tools.register(WebFetchTool(max_chars=fetch_config.max_chars))
 
         message_tool = MessageTool(send_callback=self.bus.publish_outbound)
         self.tools.register(message_tool)

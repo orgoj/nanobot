@@ -250,14 +250,27 @@ class HeartbeatConfig(BaseModel):
 class WebSearchConfig(BaseModel):
     """Web search tool configuration."""
 
+    provider: str = "brave"
     api_key: str = ""
     max_results: int = 5
+    zai_api_key: str = ""
+    zai_base_url: str = ""
+
+
+class WebFetchConfig(BaseModel):
+    """Web fetch tool configuration."""
+
+    provider: str = "readability"
+    zai_api_key: str = ""
+    zai_base_url: str = ""
+    max_chars: int = 50000
 
 
 class WebToolsConfig(BaseModel):
     """Web tools configuration."""
 
     search: WebSearchConfig = Field(default_factory=WebSearchConfig)
+    fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
 
 
 class ExecToolConfig(BaseModel):

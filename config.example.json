@@ -38,8 +38,17 @@
     "restrict_to_workspace": false,
     "web": {
       "search": {
+        "provider": "brave",
+        "zai_api_key": "",
+        "zai_base_url": "",
         "api_key": "",
         "max_results": 5
+      },
+      "fetch": {
+        "provider": "readability",
+        "zai_api_key": "",
+        "zai_base_url": "",
+        "max_chars": 50000
       }
     },
     "exec": {
