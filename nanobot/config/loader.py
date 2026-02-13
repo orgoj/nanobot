@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import json5
+
 from nanobot.config.schema import Config
 
 
@@ -36,7 +38,7 @@ def load_config(config_path: Path | None = None) -> Config:
     if path.exists():
         try:
             with open(path) as f:
-                data = json.load(f)
+                data = json5.load(f)
             data = _migrate_config(data)
             return Config.model_validate(convert_keys(data))
         except (json.JSONDecodeError, ValueError) as e:

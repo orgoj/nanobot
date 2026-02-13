@@ -22,6 +22,7 @@ nanobot is an ultra-lightweight AI agent framework.
 - **Channels**: `{nanobot}/channels/`
 - **Tools**: `{nanobot}/agent/tools/`
 - **Config**: `{nanobot}/config/`
+- **Config Example**: `{root}/config.example.json` (Keep updated with all available options and English comments)
 - **CLI**: `{nanobot}/cli/`
 - **Providers**: `{nanobot}/providers/` (via LiteLLM)
 - **Skills**: `{nanobot}/skills/`
@@ -128,6 +129,7 @@ bash core_agent_lines.sh
 - Follow PEP 8
 - Use type hints
 - Keep core logic concise (the project goal is < 4000 lines)
+- **Configuration Maintenance**: Always keep `config.example.json` updated when adding new features or settings. All comments in `config.example.json` must be in English.
 - New providers should be added via `nanobot/providers/registry.py`
 - Use `uv` for dependency management (pyproject.toml)
 - Run `ruff` for linting: `uv run ruff check nanobot/`
