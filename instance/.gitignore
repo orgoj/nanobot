@@ -5,6 +5,7 @@
 !.gitignore
 !README.md
 !config.sh.example
+!fetch-remote.sh
 
 # But ignore user's config
 /config.sh

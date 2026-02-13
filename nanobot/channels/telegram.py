@@ -217,21 +217,37 @@ class TelegramChannel(BaseChannel):
                         file_path = str(temp_path)
 
                     try:
+                        from nanobot.utils.telegram_markdown import markdown_to_telegram
+
+                        caption = markdown_to_telegram(msg.content) if msg.content else None
+
                         if media_type == "image":
                             await self._app.bot.send_photo(
-                                chat_id=chat_id, photo=open(file_path, "rb"), caption=msg.content
+                                chat_id=chat_id,
+                                photo=open(file_path, "rb"),
+                                caption=caption,
+                                parse_mode="MarkdownV2",
                             )
                         elif media_type == "voice":
                             await self._app.bot.send_voice(
-                                chat_id=chat_id, voice=open(file_path, "rb"), caption=msg.content
+                                chat_id=chat_id,
+                                voice=open(file_path, "rb"),
+                                caption=caption,
+                                parse_mode="MarkdownV2",
                             )
                         elif media_type == "audio":
                             await self._app.bot.send_audio(
-                                chat_id=chat_id, audio=open(file_path, "rb"), caption=msg.content
+                                chat_id=chat_id,
+                                audio=open(file_path, "rb"),
+                                caption=caption,
+                                parse_mode="MarkdownV2",
                             )
                         else:
                             await self._app.bot.send_document(
-                                chat_id=chat_id, document=open(file_path, "rb"), caption=msg.content
+                                chat_id=chat_id,
+                                document=open(file_path, "rb"),
+                                caption=caption,
+                                parse_mode="MarkdownV2",
                             )
                     finally:
                         if temp_path and temp_path.exists():
@@ -240,7 +256,12 @@ class TelegramChannel(BaseChannel):
                 if not msg.content:
                     return
 
-            await self._app.bot.send_message(chat_id=chat_id, text=msg.content)
+            from nanobot.utils.telegram_markdown import markdown_to_telegram
+
+            formatted_content = markdown_to_telegram(msg.content)
+            await self._app.bot.send_message(
+                chat_id=chat_id, text=formatted_content, parse_mode="MarkdownV2"
+            )
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
 

@@ -43,12 +43,16 @@ class EmbeddingProvider:
                 self._model = TextEmbedding(self.config.local_model)
                 self._model_loaded = True
                 logger.info("Embedding model loaded successfully")
-            except Exception as e:
-                logger.error(f"Failed to load local embedding model: {e}")
+            except ImportError:
+                logger.error(
+                    "fastembed package not installed. Install with: pip install 'nanobot-ai[memory]'"
+                )
                 if self.config.api_fallback:
                     logger.info("Will fallback to API embeddings")
                 else:
                     raise
+            except Exception as e:
+                logger.error(f"Failed to load local embedding model: {e}")
 
     def embed(self, text: str) -> list[float]:
         """

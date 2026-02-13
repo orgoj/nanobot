@@ -18,6 +18,15 @@ You have access to:
 - Messaging (message)
 - Background tasks (spawn)
 
+## Telegram Markdown Support
+
+The Telegram channel uses MarkdownV2. You can use standard Markdown like `*bold*`, `_italic_`, `[links](url)`, and `` `code` ``. The system automatically handles the complex escapement required by Telegram.
+
+**Important**:
+- Use standard Markdown only. 
+- Avoid manual escapement of special characters like `.` or `-` as the system will do it for you.
+- Nested formatting is supported (e.g. `***bold italic***`).
+
 ## Memory
 
 - `memory/MEMORY.md` — long-term facts (preferences, context, relationships)

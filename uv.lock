@@ -1399,8 +1399,6 @@ source = { editable = "." }
 dependencies = [
     { name = "croniter" },
     { name = "dingtalk-stream" },
-    { name = "fastembed" },
-    { name = "gliner2" },
     { name = "httpx", extra = ["socks"] },
     { name = "json5" },
     { name = "lark-oapi" },
@@ -1430,13 +1428,17 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+memory = [
+    { name = "fastembed" },
+    { name = "gliner2" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "croniter", specifier = ">=2.0.0" },
     { name = "dingtalk-stream", specifier = ">=0.4.0" },
-    { name = "fastembed", specifier = ">=0.3.0" },
-    { name = "gliner2", specifier = ">=0.1.0" },
+    { name = "fastembed", marker = "extra == 'memory'", specifier = ">=0.3.0" },
+    { name = "gliner2", marker = "extra == 'memory'", specifier = ">=0.1.0" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.25.0" },
     { name = "json5", specifier = ">=0.9.25" },
     { name = "lark-oapi", specifier = ">=1.0.0" },
@@ -1462,7 +1464,7 @@ requires-dist = [
     { name = "websocket-client", specifier = ">=1.6.0" },
     { name = "websockets", specifier = ">=12.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "memory"]
 
 [[package]]
 name = "networkx"

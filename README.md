@@ -20,6 +20,7 @@
 
 ## 📢 News
 
+- **2026-02-13** 📤 **Telegram MarkdownV2 Support** — Added robust Markdown converter with automatic escapement for Telegram.
 - **2026-02-12** 🧠 **Redesigned memory system** — Integrated production-hardened TurboMemoryStore with SQLite, knowledge graphs, and semantic search!
 - **2026-02-12** 🛠️ **Integrated advanced features** from useful forks (`bot2046`, `MTAAP`, `Kirayu173`, `ls1816`): Parallel Tool Execution, Auto-continuation, Loop Guard, and Streaming.
 - **2026-02-11** 🔐 **Security & UX** — Added secret sanitizer, interactive configuration wizard, and skill security scanner.
@@ -81,6 +82,11 @@ Automatically detects and masks sensitive information (API keys, passwords, toke
 git clone https://github.com/HKUDS/nanobot.git
 cd nanobot
 pip install -e .
+```
+
+To enable full memory features (local embeddings and entity extraction):
+```bash
+pip install -e ".[memory]"
 ```
 
 ## 🚀 Quick Start

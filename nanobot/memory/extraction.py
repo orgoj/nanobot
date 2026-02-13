@@ -53,7 +53,9 @@ class Gliner2Extractor:
                 self._extractor = GLiNER2(model_name=self.config.gliner2_model)
                 logger.info("GLiNER2 model loaded successfully")
             except ImportError:
-                logger.error("gliner2 package not installed. Install with: pip install gliner2")
+                logger.error(
+                    "gliner2 package not installed. Install with: pip install 'nanobot-ai[memory]'"
+                )
                 raise
             except Exception as e:
                 logger.error(f"Failed to load GLiNER2 model: {e}")
