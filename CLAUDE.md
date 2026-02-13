@@ -111,6 +111,14 @@ bash core_agent_lines.sh
 | `nanobot cron remove <id>` | Remove job |
 | `nanobot cron run <id>` | Run job manually |
 
+## Development Workflow
+
+- **Mandatory Linting & Formatting**: After ANY code changes and before declaring a task as finished, you MUST run the formatter and linter. This catches many common errors and ensures code quality.
+  ```bash
+  uv run ruff format .
+  uv run ruff check --fix .
+  ```
+
 ## Coding Style
 - Follow PEP 8
 - Use type hints

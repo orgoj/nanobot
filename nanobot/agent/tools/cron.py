@@ -12,12 +12,12 @@ if TYPE_CHECKING:
 class CronTool(Tool):
     """
     Tool to schedule reminders, recurring tasks, and routing calibration.
-    
+
     Supports two job types:
     1. User reminders (delivered back to user via chat/channel)
     2. System calibration (optimizes routing performance in background)
     """
-    
+
     def __init__(self, cron_service: "CronService"):
         self._cron = cron_service
         self._channel = None
@@ -110,6 +110,7 @@ class CronTool(Tool):
             schedule = CronSchedule(kind="cron", expr=cron_expr)
         elif at:
             from datetime import datetime
+
             dt = datetime.fromisoformat(at)
             at_ms = int(dt.timestamp() * 1000)
             schedule = CronSchedule(kind="at", at_ms=at_ms)
@@ -142,7 +143,7 @@ class CronTool(Tool):
             schedule_desc = f"on schedule '{cron_expr}'"
         else:
             return "Error: either every_seconds or cron_expr is required"
-        
+
         job = self._cron.add_job(
             name="Routing Calibration",
             schedule=schedule,
@@ -158,7 +159,7 @@ class CronTool(Tool):
         jobs = self._cron.list_jobs()
         if not jobs:
             return "No scheduled jobs."
-        
+
         user_jobs = []
         calibration_jobs = []
         for job in jobs:
@@ -166,18 +167,19 @@ class CronTool(Tool):
                 calibration_jobs.append(job)
             else:
                 user_jobs.append(job)
-        
+
         lines = []
         if user_jobs:
             lines.append("📅 User Reminders:")
             for job in user_jobs:
                 lines.append(f"  • {job.id}: '{job.name}' ({job.schedule.kind})")
         if calibration_jobs:
-            if user_jobs: lines.append("")
+            if user_jobs:
+                lines.append("")
             lines.append("🔧 System Calibration:")
             for job in calibration_jobs:
                 lines.append(f"  • {job.id}: '{job.name}' ({job.schedule.kind})")
-        
+
         return "\n".join(lines)
 
     def _remove_job(self, job_id: str | None) -> str:

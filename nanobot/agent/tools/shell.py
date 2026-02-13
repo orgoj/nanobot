@@ -141,7 +141,7 @@ class ExecTool(Tool):
                     if not is_allowed:
                         allowed_list = ", ".join(str(p) for p in self.allowed_paths)
                         return f"Error: Command blocked - path {p} is outside allowed paths: {allowed_list}"
-        
+
         elif self.restrict_to_workspace:
             if "..\\" in cmd or "../" in cmd:
                 return "Error: Command blocked by safety guard (path traversal detected)"

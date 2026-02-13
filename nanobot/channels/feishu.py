@@ -377,17 +377,28 @@ class FeishuChannel(BaseChannel):
 
         self._running = True
         self._loop = asyncio.get_running_loop()
-        self._client = lark.Client.builder().app_id(self.config.app_id).app_secret(self.config.app_secret).build()
+        self._client = (
+            lark.Client.builder()
+            .app_id(self.config.app_id)
+            .app_secret(self.config.app_secret)
+            .build()
+        )
 
         event_handler = (
-            lark.EventDispatcherHandler.builder(self.config.encrypt_key or "", self.config.verification_token or "")
+            lark.EventDispatcherHandler.builder(
+                self.config.encrypt_key or "", self.config.verification_token or ""
+            )
             .register_p2_im_message_receive_v1(self._on_message_sync)
             .register_p2_im_message_reaction_created_v1(self._on_reaction_created)
-            .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(self._on_p2p_chat_entered_sync)
+            .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(
+                self._on_p2p_chat_entered_sync
+            )
             .register_p2_im_message_message_read_v1(self._on_message_read_sync)
             .build()
         )
-        self._ws_client = lark.ws.Client(self.config.app_id, self.config.app_secret, event_handler=event_handler)
+        self._ws_client = lark.ws.Client(
+            self.config.app_id, self.config.app_secret, event_handler=event_handler
+        )
 
         def run_ws():
             while self._running:
@@ -416,18 +427,29 @@ class FeishuChannel(BaseChannel):
 
         def add_sync():
             try:
-                request = CreateMessageReactionRequest.builder().message_id(message_id).request_body(
-                    CreateMessageReactionRequestBody.builder().reaction_type(Emoji.builder().emoji_type(emoji_type).build()).build()
-                ).build()
+                request = (
+                    CreateMessageReactionRequest.builder()
+                    .message_id(message_id)
+                    .request_body(
+                        CreateMessageReactionRequestBody.builder()
+                        .reaction_type(Emoji.builder().emoji_type(emoji_type).build())
+                        .build()
+                    )
+                    .build()
+                )
                 self._client.im.v1.message_reaction.create(request)
             except Exception:
                 pass
+
         await asyncio.get_running_loop().run_in_executor(None, add_sync)
 
     async def _download_media(self, message_id: str, file_key: str, media_type: str) -> str | None:
         try:
             from nanobot.utils.helpers import get_data_path
-            ext = {"image": ".jpg", "audio": ".m4a", "file": "", "video": ".mp4"}.get(media_type, "")
+
+            ext = {"image": ".jpg", "audio": ".m4a", "file": "", "video": ".mp4"}.get(
+                media_type, ""
+            )
             media_dir = get_data_path() / "media"
             media_dir.mkdir(parents=True, exist_ok=True)
             file_path = media_dir / f"{file_key[:16]}{ext}"
@@ -439,14 +461,22 @@ class FeishuChannel(BaseChannel):
         except Exception:
             return None
 
-    async def _fetch_file_content(self, message_id: str, file_key: str, media_type: str) -> bytes | None:
+    async def _fetch_file_content(
+        self, message_id: str, file_key: str, media_type: str
+    ) -> bytes | None:
         try:
             token = await self._get_tenant_access_token()
             if not token:
                 return None
-            api_url = f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/resources/{file_key}"
+            api_url = (
+                f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/resources/{file_key}"
+            )
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(api_url, headers={"Authorization": f"Bearer {token}"}, params={"type": media_type})
+                response = await client.get(
+                    api_url,
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"type": media_type},
+                )
                 if response.status_code != 200:
                     return None
                 if "application/json" in response.headers.get("Content-Type", ""):
@@ -461,7 +491,10 @@ class FeishuChannel(BaseChannel):
         except Exception:
             return None
 
-    _TABLE_RE = re.compile(r"((?:^[ \t]*\|.+\|[ \t]*\n)(?:^[ \t]*\|[-:\s|]+\|[ \t]*\n)(?:^[ \t]*\|.+\|[ \t]*\n?)+)", re.MULTILINE)
+    _TABLE_RE = re.compile(
+        r"((?:^[ \t]*\|.+\|[ \t]*\n)(?:^[ \t]*\|[-:\s|]+\|[ \t]*\n)(?:^[ \t]*\|.+\|[ \t]*\n?)+)",
+        re.MULTILINE,
+    )
 
     @staticmethod
     def _parse_md_table(table_text: str) -> dict | None:
@@ -470,15 +503,27 @@ class FeishuChannel(BaseChannel):
             return None
         headers = [c.strip() for c in lines[0].strip("|").split("|")]
         rows = [[c.strip() for c in line.strip("|").split("|")] for line in lines[2:]]
-        columns = [{"tag": "column", "name": f"c{i}", "display_name": h, "width": "auto"} for i, h in enumerate(headers)]
-        return {"tag": "table", "page_size": len(rows) + 1, "columns": columns, "rows": [{f"c{i}": r[i] if i < len(r) else "" for i in range(len(headers))} for r in rows]}
+        columns = [
+            {"tag": "column", "name": f"c{i}", "display_name": h, "width": "auto"}
+            for i, h in enumerate(headers)
+        ]
+        return {
+            "tag": "table",
+            "page_size": len(rows) + 1,
+            "columns": columns,
+            "rows": [
+                {f"c{i}": r[i] if i < len(r) else "" for i in range(len(headers))} for r in rows
+            ],
+        }
 
     def _build_card_elements(self, content: str) -> list[dict]:
         elements, last_end = [], 0
         for m in self._TABLE_RE.finditer(content):
             if before := content[last_end : m.start()].strip():
                 elements.append({"tag": "markdown", "content": before})
-            elements.append(self._parse_md_table(m.group(1)) or {"tag": "markdown", "content": m.group(1)})
+            elements.append(
+                self._parse_md_table(m.group(1)) or {"tag": "markdown", "content": m.group(1)}
+            )
             last_end = m.end()
         if remaining := content[last_end:].strip():
             elements.append({"tag": "markdown", "content": remaining})
@@ -491,28 +536,73 @@ class FeishuChannel(BaseChannel):
             receive_id_type = "chat_id" if msg.chat_id.startswith("oc_") else "open_id"
             cleaned_text, extracted = self._extract_explicit_attachments(msg.content)
             attachments = (msg.media or []) + extracted
-            normalized = self._normalize_attachment_paths(attachments, base_dir=self._attachment_base_dir, allowed_dir=self._attachment_allowed_dir)
+            normalized = self._normalize_attachment_paths(
+                attachments,
+                base_dir=self._attachment_base_dir,
+                allowed_dir=self._attachment_allowed_dir,
+            )
             if cleaned_text.strip():
                 msg_type, content = "text", json.dumps({"text": cleaned_text})
                 if self.config.render_markdown:
                     if self._TABLE_RE.search(cleaned_text):
-                        msg_type, content = "interactive", json.dumps({"config": {"wide_screen_mode": True}, "elements": self._build_card_elements(cleaned_text)}, ensure_ascii=False)
+                        msg_type, content = (
+                            "interactive",
+                            json.dumps(
+                                {
+                                    "config": {"wide_screen_mode": True},
+                                    "elements": self._build_card_elements(cleaned_text),
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
                     elif self._markdown_converter and should_render_markdown(cleaned_text):
-                        msg_type, content = "post", json.dumps(self._markdown_converter.convert(cleaned_text))
-                request = CreateMessageRequest.builder().receive_id_type(receive_id_type).request_body(
-                    CreateMessageRequestBody.builder().receive_id(msg.chat_id).msg_type(msg_type).content(content).build()
-                ).build()
+                        msg_type, content = (
+                            "post",
+                            json.dumps(self._markdown_converter.convert(cleaned_text)),
+                        )
+                request = (
+                    CreateMessageRequest.builder()
+                    .receive_id_type(receive_id_type)
+                    .request_body(
+                        CreateMessageRequestBody.builder()
+                        .receive_id(msg.chat_id)
+                        .msg_type(msg_type)
+                        .content(content)
+                        .build()
+                    )
+                    .build()
+                )
                 self._client.im.v1.message.create(request)
             for path in normalized:
                 try:
                     if mimetypes.guess_type(path.as_posix())[0].startswith("image/"):
-                        if (key := await self._upload_image_http(path)):
-                            self._client.im.v1.message.create(CreateMessageRequest.builder().receive_id_type(receive_id_type).request_body(
-                                CreateMessageRequestBody.builder().receive_id(msg.chat_id).msg_type("image").content(json.dumps({"image_key": key})).build()).build())
+                        if key := await self._upload_image_http(path):
+                            self._client.im.v1.message.create(
+                                CreateMessageRequest.builder()
+                                .receive_id_type(receive_id_type)
+                                .request_body(
+                                    CreateMessageRequestBody.builder()
+                                    .receive_id(msg.chat_id)
+                                    .msg_type("image")
+                                    .content(json.dumps({"image_key": key}))
+                                    .build()
+                                )
+                                .build()
+                            )
                     else:
-                        if (key := await self._upload_file_http(path)):
-                            self._client.im.v1.message.create(CreateMessageRequest.builder().receive_id_type(receive_id_type).request_body(
-                                CreateMessageRequestBody.builder().receive_id(msg.chat_id).msg_type("file").content(json.dumps({"file_key": key})).build()).build())
+                        if key := await self._upload_file_http(path):
+                            self._client.im.v1.message.create(
+                                CreateMessageRequest.builder()
+                                .receive_id_type(receive_id_type)
+                                .request_body(
+                                    CreateMessageRequestBody.builder()
+                                    .receive_id(msg.chat_id)
+                                    .msg_type("file")
+                                    .content(json.dumps({"file_key": key}))
+                                    .build()
+                                )
+                                .build()
+                            )
                 except Exception:
                     pass
         except Exception:
@@ -554,21 +644,31 @@ class FeishuChannel(BaseChannel):
             elif message.message_type in ("image", "audio", "file", "video"):
                 try:
                     c = json.loads(message.content)
-                    key = c.get("image_key") if message.message_type == "image" else c.get("file_key")
-                    if key and (p := await self._download_media(message.message_id, key, message.message_type)):
+                    key = (
+                        c.get("image_key") if message.message_type == "image" else c.get("file_key")
+                    )
+                    if key and (
+                        p := await self._download_media(
+                            message.message_id, key, message.message_type
+                        )
+                    ):
                         media_paths.append(p)
                         content_parts.append(f"[{message.message_type}: {p}]")
                 except Exception:
                     pass
             else:
-                content_parts.append(MSG_TYPE_MAP.get(message.message_type, f"[{message.message_type}]"))
+                content_parts.append(
+                    MSG_TYPE_MAP.get(message.message_type, f"[{message.message_type}]")
+                )
             content = "\n".join(content_parts).strip()
             if not content:
                 return
             reply_to = message.chat_id if message.chat_type == "group" else sender_id
             stream_id, streaming_session, use_streaming = str(uuid.uuid4()), None, False
             if self.config.streaming and CARDKIT_AVAILABLE:
-                streaming_session = FeishuStreamingSession(self._client, reply_to, "chat_id" if reply_to.startswith("oc_") else "open_id")
+                streaming_session = FeishuStreamingSession(
+                    self._client, reply_to, "chat_id" if reply_to.startswith("oc_") else "open_id"
+                )
                 use_streaming = await self._loop.run_in_executor(None, streaming_session.start_sync)
             if use_streaming and streaming_session:
                 acc_text, acc_lock = "", threading.Lock()
@@ -582,14 +682,29 @@ class FeishuChannel(BaseChannel):
                         self._loop.run_in_executor(None, streaming_session.update_sync, t)
                     except Exception:
                         pass
+
                 self.bus.register_stream_callback(stream_id, cb)
-            await self.bus.publish_inbound(InboundMessage(channel=self.name, sender_id=sender_id, chat_id=reply_to, content=content, media=media_paths, metadata={"message_id": message.message_id}, stream_id=stream_id if use_streaming else None))
+            await self.bus.publish_inbound(
+                InboundMessage(
+                    channel=self.name,
+                    sender_id=sender_id,
+                    chat_id=reply_to,
+                    content=content,
+                    media=media_paths,
+                    metadata={"message_id": message.message_id},
+                    stream_id=stream_id if use_streaming else None,
+                )
+            )
             if use_streaming and streaming_session:
                 await self._wait_and_close_stream(streaming_session, stream_id)
         except Exception:
             pass
 
-    async def _wait_and_close_stream(self, session: "FeishuStreamingSession", stream_id: str) -> None:
+    async def _wait_and_close_stream(
+        self, session: "FeishuStreamingSession", stream_id: str
+    ) -> None:
         await self.bus.wait_stream_done(stream_id, timeout=300)
         if not session.closed:
-            await self._loop.run_in_executor(None, session.close_sync, session.pending_text or session.current_text)
+            await self._loop.run_in_executor(
+                None, session.close_sync, session.pending_text or session.current_text
+            )

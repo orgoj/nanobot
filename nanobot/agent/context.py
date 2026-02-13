@@ -96,6 +96,7 @@ class ContextBuilder:
     def _get_identity(self) -> str:
         """Get the core identity section."""
         import time as _time
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         tz = _time.strftime("%Z") or "UTC"
         workspace_path = str(self.workspace.expanduser().resolve())

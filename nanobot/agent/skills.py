@@ -14,16 +14,17 @@ BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
 class SkillVerificationStatus:
     """Security verification status for a skill."""
-    PENDING = "pending"      # Not yet scanned
-    APPROVED = "approved"    # Passed security scan
-    REJECTED = "rejected"    # Failed security scan (dangerous)
+
+    PENDING = "pending"  # Not yet scanned
+    APPROVED = "approved"  # Passed security scan
+    REJECTED = "rejected"  # Failed security scan (dangerous)
     MANUAL_APPROVAL = "manual_approval"  # Flagged but user approved
 
 
 class SkillManager:
     """
     Loader for agent skills with security verification.
-    
+
     Skills are markdown files (SKILL.md) that teach the agent how to use
     specific tools or perform certain tasks.
     """
@@ -60,7 +61,7 @@ class SkillManager:
             try:
                 data = json.loads(verification_file.read_text())
                 return data.get("status", SkillVerificationStatus.PENDING)
-            except:
+            except Exception:
                 pass
         return SkillVerificationStatus.PENDING
 
@@ -68,9 +69,14 @@ class SkillManager:
         """Run security scan and save results."""
         try:
             from nanobot.security.skill_scanner import scan_skill
+
             skill_path = self.workspace_skills / skill_name
             report = scan_skill(skill_path)
-            status = SkillVerificationStatus.APPROVED if report.passed else SkillVerificationStatus.REJECTED
+            status = (
+                SkillVerificationStatus.APPROVED
+                if report.passed
+                else SkillVerificationStatus.REJECTED
+            )
 
             verification_data = {
                 "status": status,
@@ -78,7 +84,7 @@ class SkillManager:
                 "critical_count": report.critical_count,
                 "high_count": report.high_count,
                 "passed": report.passed,
-                "findings_count": len(report.findings)
+                "findings_count": len(report.findings),
             }
             verification_file = self.verification_dir / f"{skill_name}.json"
             verification_file.write_text(json.dumps(verification_data, indent=2))
@@ -87,7 +93,9 @@ class SkillManager:
             logger.error(f"Failed to scan skill {skill_name}: {e}")
             return {"status": SkillVerificationStatus.PENDING, "error": str(e)}
 
-    def list_skills(self, filter_unavailable: bool = True, include_verification: bool = True) -> list[dict]:
+    def list_skills(
+        self, filter_unavailable: bool = True, include_verification: bool = True
+    ) -> list[dict]:
         """List all available skills."""
         skills = []
 
@@ -107,7 +115,11 @@ class SkillManager:
         # Built-in skills
         if self.builtin_skills and self.builtin_skills.exists():
             for skill_dir in self.builtin_skills.iterdir():
-                if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists() and not any(s["name"] == skill_dir.name for s in skills):
+                if (
+                    skill_dir.is_dir()
+                    and (skill_dir / "SKILL.md").exists()
+                    and not any(s["name"] == skill_dir.name for s in skills)
+                ):
                     skill_info = {
                         "name": skill_dir.name,
                         "path": str(skill_dir / "SKILL.md"),
@@ -124,7 +136,10 @@ class SkillManager:
                     continue
                 if include_verification:
                     verified = s.get("verified", SkillVerificationStatus.PENDING)
-                    if verified not in [SkillVerificationStatus.APPROVED, SkillVerificationStatus.MANUAL_APPROVAL]:
+                    if verified not in [
+                        SkillVerificationStatus.APPROVED,
+                        SkillVerificationStatus.MANUAL_APPROVAL,
+                    ]:
                         continue
                 filtered.append(s)
             return filtered
@@ -158,6 +173,7 @@ class SkillManager:
 
     def build_skills_summary(self, show_all: bool = True) -> str:
         """Build a summary of all skills."""
+
         def escape_xml(s: str) -> str:
             return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 

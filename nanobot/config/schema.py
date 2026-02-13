@@ -274,13 +274,12 @@ class ToolsConfig(BaseModel):
     restrict_to_workspace: bool = False
     evolutionary: bool = False
     allowed_paths: list[str] = Field(default_factory=list)
-    protected_paths: list[str] = Field(
-        default_factory=lambda: ["~/.nanobot/config.json"]
-    )
+    protected_paths: list[str] = Field(default_factory=lambda: ["~/.nanobot/config.json"])
 
 
 class RoutingTierConfig(BaseModel):
     """Configuration for a routing tier."""
+
     model: str
     cost_per_mtok: float = 1.0
     secondary_model: str | None = None
@@ -288,40 +287,49 @@ class RoutingTierConfig(BaseModel):
 
 class RoutingTiersConfig(BaseModel):
     """Configuration for all routing tiers."""
-    simple: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
-        model="deepseek/deepseek-chat-v3-0324",
-        cost_per_mtok=0.27,
-        secondary_model="deepseek/deepseek-chat-v3.1"
-    ))
-    medium: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
-        model="openai/gpt-4.1-mini",
-        cost_per_mtok=0.40,
-        secondary_model="openai/gpt-4o-mini"
-    ))
-    complex: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
-        model="anthropic/claude-sonnet-4.5",
-        cost_per_mtok=3.0,
-        secondary_model="anthropic/claude-sonnet-4"
-    ))
-    reasoning: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
-        model="openai/o3",
-        cost_per_mtok=2.0,
-        secondary_model="openai/gpt-4o"
-    ))
-    coding: RoutingTierConfig = Field(default_factory=lambda: RoutingTierConfig(
-        model="moonshotai/kimi-k2.5",
-        cost_per_mtok=0.45,
-        secondary_model="anthropic/claude-sonnet-4"
-    ))
+
+    simple: RoutingTierConfig = Field(
+        default_factory=lambda: RoutingTierConfig(
+            model="deepseek/deepseek-chat-v3-0324",
+            cost_per_mtok=0.27,
+            secondary_model="deepseek/deepseek-chat-v3.1",
+        )
+    )
+    medium: RoutingTierConfig = Field(
+        default_factory=lambda: RoutingTierConfig(
+            model="openai/gpt-4.1-mini", cost_per_mtok=0.40, secondary_model="openai/gpt-4o-mini"
+        )
+    )
+    complex: RoutingTierConfig = Field(
+        default_factory=lambda: RoutingTierConfig(
+            model="anthropic/claude-sonnet-4.5",
+            cost_per_mtok=3.0,
+            secondary_model="anthropic/claude-sonnet-4",
+        )
+    )
+    reasoning: RoutingTierConfig = Field(
+        default_factory=lambda: RoutingTierConfig(
+            model="openai/o3", cost_per_mtok=2.0, secondary_model="openai/gpt-4o"
+        )
+    )
+    coding: RoutingTierConfig = Field(
+        default_factory=lambda: RoutingTierConfig(
+            model="moonshotai/kimi-k2.5",
+            cost_per_mtok=0.45,
+            secondary_model="anthropic/claude-sonnet-4",
+        )
+    )
 
 
 class ClientClassifierConfig(BaseModel):
     """Configuration for client-side classifier."""
+
     min_confidence: float = 0.85
 
 
 class LLMClassifierConfig(BaseModel):
     """Configuration for LLM-assisted classifier."""
+
     model: str = "gpt-4o-mini"
     timeout_ms: int = 500
     secondary_model: str | None = None
@@ -329,12 +337,14 @@ class LLMClassifierConfig(BaseModel):
 
 class StickyRoutingConfig(BaseModel):
     """Configuration for sticky routing behavior."""
+
     context_window: int = 5
     downgrade_confidence: float = 0.9
 
 
 class AutoCalibrationConfig(BaseModel):
     """Configuration for auto-calibration."""
+
     enabled: bool = True
     interval: str = "24h"
     min_classifications: int = 50
@@ -344,6 +354,7 @@ class AutoCalibrationConfig(BaseModel):
 
 class RoutingConfig(BaseModel):
     """Configuration for smart routing."""
+
     enabled: bool = False
     tiers: RoutingTiersConfig = Field(default_factory=RoutingTiersConfig)
     client_classifier: ClientClassifierConfig = Field(default_factory=ClientClassifierConfig)
@@ -354,6 +365,7 @@ class RoutingConfig(BaseModel):
 
 class BackgroundConfig(BaseModel):
     """Background processing configuration for memory system."""
+
     enabled: bool = True
     interval_seconds: int = 60
     quiet_threshold_seconds: int = 30
@@ -361,6 +373,7 @@ class BackgroundConfig(BaseModel):
 
 class EmbeddingConfig(BaseModel):
     """Embedding provider configuration."""
+
     provider: str = "local"
     local_model: str = "BAAI/bge-small-en-v1.5"
     api_model: str = "qwen/qwen3-embedding-0.6b"
@@ -371,6 +384,7 @@ class EmbeddingConfig(BaseModel):
 
 class ExtractionConfig(BaseModel):
     """Entity extraction configuration."""
+
     enabled: bool = True
     provider: str = "gliner2"
     gliner2_model: str = "fastino/gliner2-base-v1"
@@ -382,6 +396,7 @@ class ExtractionConfig(BaseModel):
 
 class SummaryConfig(BaseModel):
     """Summary node configuration."""
+
     staleness_threshold: int = 10
     max_refresh_batch: int = 20
     model: str = ""
@@ -389,6 +404,7 @@ class SummaryConfig(BaseModel):
 
 class LearningConfig(BaseModel):
     """Learning and preferences configuration."""
+
     enabled: bool = True
     decay_days: int = 14
     max_learnings: int = 200
@@ -397,12 +413,14 @@ class LearningConfig(BaseModel):
 
 class MemoryContextConfig(BaseModel):
     """Context assembly configuration for TurboMemory."""
+
     total_budget: int = 4000
     always_include_preferences: bool = True
 
 
 class SessionCompactionConfig(BaseModel):
     """Session compaction configuration for long conversations."""
+
     enabled: bool = True
     mode: str = "summary"
     threshold_percent: float = 0.8
@@ -417,6 +435,7 @@ class SessionCompactionConfig(BaseModel):
 
 class EnhancedContextConfig(BaseModel):
     """Enhanced context assembly with real-time monitoring."""
+
     max_context_tokens: int = 8000
     response_buffer: int = 1000
     memory_budget_percent: float = 0.35
@@ -433,34 +452,46 @@ class EnhancedContextConfig(BaseModel):
 
 class PrivacyConfig(BaseModel):
     """Privacy and security configuration."""
+
     auto_redact_pii: bool = True
     auto_redact_credentials: bool = True
-    excluded_patterns: list[str] = Field(default_factory=lambda: [
-        "password", "api_key", "secret", "token", "credential"
-    ])
+    excluded_patterns: list[str] = Field(
+        default_factory=lambda: ["password", "api_key", "secret", "token", "credential"]
+    )
 
 
 class SecurityConfig(BaseModel):
     """Security and skill scanning configuration."""
+
     enabled: bool = True
     strict_mode: bool = False
     block_on_critical: bool = True
     block_on_high: bool = True
     scan_on_install: bool = True
     scan_on_load: bool = False
-    allowed_shell_commands: list[str] = Field(default_factory=lambda: [
-        "git", "npm", "node", "python", "python3", "pip", "pnpm", "yarn"
-    ])
-    blocked_patterns: list[str] = Field(default_factory=lambda: [
-        "curl.*\\|.*bash", "curl.*\\|.*sh", "wget.*\\|.*bash", "wget.*\\|.*sh",
-        "sudo", "rm -rf /", "rm -rf /*", "> /etc/", "> ~/.ssh/"
-    ])
+    allowed_shell_commands: list[str] = Field(
+        default_factory=lambda: ["git", "npm", "node", "python", "python3", "pip", "pnpm", "yarn"]
+    )
+    blocked_patterns: list[str] = Field(
+        default_factory=lambda: [
+            "curl.*\\|.*bash",
+            "curl.*\\|.*sh",
+            "wget.*\\|.*bash",
+            "wget.*\\|.*sh",
+            "sudo",
+            "rm -rf /",
+            "rm -rf /*",
+            "> /etc/",
+            "> ~/.ssh/",
+        ]
+    )
     allow_network_installs: bool = False
     sandbox_skills: bool = False
 
 
 class TurboMemoryConfig(BaseModel):
     """Turbo memory system configuration."""
+
     enabled: bool = True
     db_path: str = "memory/memory.db"
 
@@ -477,6 +508,7 @@ class TurboMemoryConfig(BaseModel):
 
 class WorkLogsConfig(BaseModel):
     """Work logs configuration."""
+
     enabled: bool = True
     storage: str = "sqlite"
     retention_days: int = 30
@@ -490,6 +522,7 @@ class WorkLogsConfig(BaseModel):
 
 class LegacyContextConfig(BaseModel):
     """Legacy context builder configuration."""
+
     context_plugin_package: str = "nanobot.agent.context"
     context_plugin_class: str = "ContextBuilder"
     context_plugin_config: dict[str, str] | None = None
@@ -497,6 +530,7 @@ class LegacyContextConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     """Logging configuration."""
+
     file_logging_enabled: bool = False
     file_log_path: str | None = None
     log_full_messages: bool = False
@@ -505,6 +539,7 @@ class LoggingConfig(BaseModel):
 
 class LegacyMemoryConfig(BaseModel):
     """Legacy file-based memory configuration."""
+
     max_long_term_lines: int = 50
     max_daily_lines: int = 100
     include_recent_days: int = 3
@@ -597,7 +632,4 @@ class Config(BaseSettings):
                 return spec.default_api_base
         return None
 
-    model_config = ConfigDict(
-        env_prefix="NANOBOT_",
-        env_nested_delimiter="__"
-    )
+    model_config = ConfigDict(env_prefix="NANOBOT_", env_nested_delimiter="__")

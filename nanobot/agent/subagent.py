@@ -91,27 +91,39 @@ class SubagentManager:
             if self.evolutionary and self.allowed_paths:
                 allowed_dirs = [Path(p).expanduser().resolve() for p in self.allowed_paths]
                 protected_dirs = [Path(p).expanduser().resolve() for p in self.protected_paths]
-                tools.register(ReadFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
-                tools.register(WriteFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
-                tools.register(EditFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
-                tools.register(ListDirTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
-                tools.register(ExecTool(
-                    working_dir=str(self.workspace),
-                    timeout=self.exec_config.timeout,
-                    allowed_paths=self.allowed_paths,
-                    protected_paths=self.protected_paths,
-                ))
+                tools.register(
+                    ReadFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+                )
+                tools.register(
+                    WriteFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+                )
+                tools.register(
+                    EditFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+                )
+                tools.register(
+                    ListDirTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+                )
+                tools.register(
+                    ExecTool(
+                        working_dir=str(self.workspace),
+                        timeout=self.exec_config.timeout,
+                        allowed_paths=self.allowed_paths,
+                        protected_paths=self.protected_paths,
+                    )
+                )
             else:
                 allowed_dir = self.workspace if self.restrict_to_workspace else None
                 tools.register(ReadFileTool(allowed_dir=allowed_dir))
                 tools.register(WriteFileTool(allowed_dir=allowed_dir))
                 tools.register(EditFileTool(allowed_dir=allowed_dir))
                 tools.register(ListDirTool(allowed_dir=allowed_dir))
-                tools.register(ExecTool(
-                    working_dir=str(self.workspace),
-                    timeout=self.exec_config.timeout,
-                    restrict_to_workspace=self.restrict_to_workspace,
-                ))
+                tools.register(
+                    ExecTool(
+                        working_dir=str(self.workspace),
+                        timeout=self.exec_config.timeout,
+                        restrict_to_workspace=self.restrict_to_workspace,
+                    )
+                )
 
             tools.register(WebSearchTool(api_key=self.brave_api_key))
             tools.register(WebFetchTool())
@@ -161,7 +173,9 @@ class SubagentManager:
                     for tc in response.tool_calls:
                         args_str = json.dumps(tc.arguments, ensure_ascii=False)
                         sanitized_args = self.sanitizer.sanitize(args_str)
-                        logger.debug(f"Subagent [{task_id}] executing: {tc.name}({sanitized_args[:100]})")
+                        logger.debug(
+                            f"Subagent [{task_id}] executing: {tc.name}({sanitized_args[:100]})"
+                        )
                         result = await tools.execute(tc.name, tc.arguments)
                         messages.append(
                             {
@@ -216,6 +230,7 @@ Summarize this naturally for the user."""
         """Build a focused system prompt for the subagent."""
         import time as _time
         from datetime import datetime
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         tz = _time.strftime("%Z") or "UTC"
 

@@ -28,7 +28,8 @@ app = typer.Typer(name="nanobot", help="nanobot CLI")
 
 # Import memory and session commands
 try:
-    from nanobot.cli.memory_commands import _get_work_log_icon, memory_app, session_app
+    from nanobot.cli.memory_commands import memory_app, session_app
+
     if memory_app:
         app.add_typer(memory_app, name="memory")
     if session_app:
@@ -61,6 +62,7 @@ def _init_prompt_session() -> None:
 
     try:
         import termios
+
         _SAVED_TERM_ATTRS = termios.tcgetattr(sys.stdin.fileno())
     except Exception:
         pass
@@ -81,6 +83,7 @@ def _restore_terminal() -> None:
         return
     try:
         import termios
+
         termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, _SAVED_TERM_ATTRS)
     except Exception:
         pass
@@ -97,6 +100,7 @@ def _flush_pending_tty_input() -> None:
 
     try:
         import termios
+
         termios.tcflush(fd, termios.TCIFLUSH)
         return
     except Exception:
@@ -149,6 +153,7 @@ def main(
     """nanobot - Personal AI Assistant."""
     if root:
         from nanobot.utils.helpers import set_root_path
+
         set_root_path(root)
 
 
@@ -212,14 +217,16 @@ def onboard():
 
     # Create workspace templates
     from nanobot.utils.helpers import get_workspace_path
+
     workspace = get_workspace_path()
     _create_workspace_templates(workspace)
 
-    console.print(Panel.fit(
-        "[bold green]🎉 Setup Complete![/bold green]\n\n"
-        "Your nanobot is ready to use.",
-        border_style="green"
-    ))
+    console.print(
+        Panel.fit(
+            "[bold green]🎉 Setup Complete![/bold green]\n\nYour nanobot is ready to use.",
+            border_style="green",
+        )
+    )
 
     console.print("\n[bold]Get started:[/bold]")
     console.print("  [cyan]nanobot agent[/cyan]     - Start interactive chat")
@@ -304,7 +311,9 @@ def gateway(
     cron = CronService(cron_store_path)
 
     agent = AgentLoop(
-        bus=bus, provider=provider, workspace=config.workspace_path,
+        bus=bus,
+        provider=provider,
+        workspace=config.workspace_path,
         model=config.agents.defaults.model,
         max_iterations=config.agents.defaults.max_tool_iterations,
         memory_window=config.agents.defaults.memory_window,
@@ -319,14 +328,21 @@ def gateway(
 
     async def on_cron_job(job: CronJob) -> str | None:
         response = await agent.process_direct(
-            job.payload.message, session_key=f"cron:{job.id}",
-            channel=job.payload.channel or "cli", chat_id=job.payload.to or "direct",
+            job.payload.message,
+            session_key=f"cron:{job.id}",
+            channel=job.payload.channel or "cli",
+            chat_id=job.payload.to or "direct",
         )
         if job.payload.deliver and job.payload.to:
             from nanobot.bus.events import OutboundMessage
-            await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel or "cli", chat_id=job.payload.to, content=response or "",
-            ))
+
+            await bus.publish_outbound(
+                OutboundMessage(
+                    channel=job.payload.channel or "cli",
+                    chat_id=job.payload.to,
+                    content=response or "",
+                )
+            )
         return response
 
     cron.on_job = on_cron_job
@@ -346,7 +362,9 @@ def gateway(
 def agent(
     message: str = typer.Option(None, "--message", "-m", help="Message to send to the agent"),
     session_id: str = typer.Option("cli:default", "--session", "-s", help="Session ID"),
-    markdown: bool = typer.Option(True, "--markdown/--no-markdown", help="Render output as Markdown"),
+    markdown: bool = typer.Option(
+        True, "--markdown/--no-markdown", help="Render output as Markdown"
+    ),
     logs: bool = typer.Option(False, "--logs/--no-logs", help="Show runtime logs"),
 ):
     """Interact with the agent directly."""
@@ -360,7 +378,9 @@ def agent(
     provider = _make_provider(config)
 
     agent_loop = AgentLoop(
-        bus=bus, provider=provider, workspace=config.workspace_path,
+        bus=bus,
+        provider=provider,
+        workspace=config.workspace_path,
         model=config.agents.defaults.model,
         max_iterations=config.agents.defaults.max_tool_iterations,
         memory_window=config.agents.defaults.memory_window,
@@ -372,12 +392,15 @@ def agent(
     )
 
     if message:
+
         async def run_once():
             await agent_loop.process_direct(
-                message, session_id,
+                message,
+                session_id,
                 stream_callback=lambda chunk: console.print(chunk, end=""),
             )
             console.print()
+
         asyncio.run(run_once())
     else:
         _init_prompt_session()
@@ -395,6 +418,7 @@ def agent(
 
                     if command == "/explain":
                         from nanobot.agent.work_log_manager import get_work_log_manager
+
                         manager = get_work_log_manager()
                         console.print(manager.get_formatted_log("detailed"))
                         continue
@@ -403,6 +427,7 @@ def agent(
                     _print_agent_response(response, render_markdown=markdown)
                 except KeyboardInterrupt:
                     break
+
         asyncio.run(run_interactive())
 
 
@@ -410,6 +435,7 @@ def agent(
 def explain_command(mode: str = "detailed", session: str = None):
     """Explain the last decision."""
     from nanobot.agent.work_log_manager import get_work_log_manager
+
     manager = get_work_log_manager()
     log = manager.get_log_by_session(session) if session else manager.get_last_log()
     if not log:
@@ -420,6 +446,7 @@ def explain_command(mode: str = "detailed", session: str = None):
 
 channels_app = typer.Typer(help="Manage channels")
 app.add_typer(channels_app, name="channels")
+
 
 @channels_app.command("status")
 def channels_status():

@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 class RoutingTier(str, Enum):
     """Capability tiers for model selection."""
+
     SIMPLE = "simple"
     MEDIUM = "medium"
     COMPLEX = "complex"
@@ -18,7 +19,7 @@ class RoutingTier(str, Enum):
 @dataclass
 class RoutingDecision:
     """Result of a routing classification."""
-    
+
     tier: RoutingTier
     model: str
     confidence: float
@@ -26,15 +27,15 @@ class RoutingDecision:
     reasoning: str
     estimated_tokens: int
     needs_tools: bool
-    
+
     # Metadata for analytics
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass  
+@dataclass
 class ClassificationScores:
     """Scores from the 14-dimension classification system."""
-    
+
     reasoning_markers: float = 0.0
     code_presence: float = 0.0
     simple_indicators: float = 0.0
@@ -50,7 +51,7 @@ class ClassificationScores:
     reference_complexity: float = 0.0
     negation_complexity: float = 0.0
     social_interaction: float = 0.0
-    
+
     def calculate_weighted_sum(self, weights: dict[str, float]) -> float:
         """Calculate weighted sum of all scores."""
         total = 0.0
@@ -58,7 +59,7 @@ class ClassificationScores:
             if hasattr(self, field_name):
                 total += getattr(self, field_name) * weight
         return total
-    
+
     def to_dict(self) -> dict[str, float]:
         """Convert to dictionary."""
         return {
@@ -83,13 +84,13 @@ class ClassificationScores:
 @dataclass
 class RoutingPattern:
     """A learned pattern for client-side classification."""
-    
+
     regex: str
     tier: RoutingTier
     confidence: float
     examples: list[str]
     added_at: str
-    
+
     # NEW: Performance tracking fields
     times_used: int = 0
     times_matched: int = 0
@@ -97,19 +98,19 @@ class RoutingPattern:
     last_used: Optional[str] = None
     source: str = "manual"  # "manual", "auto_calibration", "user_added"
     action_context: Optional[str] = None  # "write", "explain", "analyze", etc.
-    
+
     @property
     def success_rate(self) -> float:
         """Calculate success rate of this pattern."""
         if self.times_matched == 0:
             return 0.0
         return self.times_correct / self.times_matched
-    
+
     @property
     def is_effective(self) -> bool:
         """
         Check if pattern is effective based on multiple factors.
-        
+
         A pattern is effective if:
         - It's new (less than 7 days old) - grace period
         - It has good success rate (>= 40%)
@@ -121,31 +122,31 @@ class RoutingPattern:
             age_days = (datetime.now() - added).days
             if age_days < 7:
                 return True  # New patterns get a chance
-        except:
+        except Exception:
             pass
-        
+
         # Check success rate
         if self.times_matched >= 5:
             return self.success_rate >= 0.4  # 40% success minimum
-        
+
         # Not enough data to judge, assume effective
         return True
-    
+
     @property
     def effectiveness_score(self) -> float:
         """
         Calculate overall effectiveness score (0-100).
-        
+
         Considers:
         - Success rate (0-50 points)
         - Usage frequency (0-30 points)
         - Recency (0-20 points)
         """
         score = 0.0
-        
+
         # Success rate contribution (0-50 points)
         score += self.success_rate * 50
-        
+
         # Usage frequency (0-30 points)
         if self.times_used > 100:
             score += 30
@@ -153,7 +154,7 @@ class RoutingPattern:
             score += 20
         elif self.times_used > 10:
             score += 10
-        
+
         # Recency (0-20 points)
         if self.last_used:
             try:
@@ -165,21 +166,21 @@ class RoutingPattern:
                     score += 10
                 elif days_since < 90:
                     score += 5
-            except:
+            except Exception:
                 pass
-        
+
         return score
-    
+
     def record_usage(self, was_matched: bool = False, was_correct: bool = False) -> None:
         """Record pattern usage for analytics."""
         self.times_used += 1
         self.last_used = datetime.now().isoformat()
-        
+
         if was_matched:
             self.times_matched += 1
             if was_correct:
                 self.times_correct += 1
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -198,7 +199,7 @@ class RoutingPattern:
             "is_effective": self.is_effective,
             "effectiveness_score": self.effectiveness_score,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "RoutingPattern":
         """Create from dictionary."""

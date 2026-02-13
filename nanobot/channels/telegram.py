@@ -155,21 +155,25 @@ class TelegramChannel(BaseChannel):
         if message.photo:
             photo = message.photo[-1]
             file = await context.bot.get_file(photo.file_id)
-            media.append({
-                "type": "image",
-                "mime_type": "image/jpeg",
-                "url": file.file_path,
-                "file_id": photo.file_id,
-            })
+            media.append(
+                {
+                    "type": "image",
+                    "mime_type": "image/jpeg",
+                    "url": file.file_path,
+                    "file_id": photo.file_id,
+                }
+            )
         elif message.voice:
             voice = message.voice
             file = await context.bot.get_file(voice.file_id)
-            media.append({
-                "type": "voice",
-                "mime_type": voice.mime_type,
-                "url": file.file_path,
-                "file_id": voice.file_id,
-            })
+            media.append(
+                {
+                    "type": "voice",
+                    "mime_type": voice.mime_type,
+                    "url": file.file_path,
+                    "file_id": voice.file_id,
+                }
+            )
 
         await self._handle_message(
             content=content,
@@ -205,6 +209,7 @@ class TelegramChannel(BaseChannel):
                     temp_path = None
                     if content_data and not file_path:
                         from nanobot.utils.helpers import get_data_path
+
                         temp_dir = ensure_dir(get_data_path() / "temp")
                         ext = self._get_extension(media_type, item.get("mime_type"))
                         temp_path = temp_dir / f"telegram_out_{int(time.time())}{ext}"

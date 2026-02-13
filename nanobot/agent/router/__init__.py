@@ -8,11 +8,11 @@ Provides two-layer classification:
 With sticky routing, feedback learning, and auto-calibration.
 """
 
+from .calibration import CalibrationManager
 from .classifier import ClientSideClassifier, classify_content
 from .llm_router import LLMRouter
-from .sticky import StickyRouter
-from .calibration import CalibrationManager
 from .models import RoutingDecision, RoutingTier
+from .sticky import StickyRouter
 
 __all__ = [
     "ClientSideClassifier",

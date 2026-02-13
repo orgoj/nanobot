@@ -35,12 +35,16 @@ class Session:
         self.messages.append(msg)
         self.updated_at = datetime.now()
 
-    def get_history(self, max_messages: int = 50, preserve_tool_chains: bool = True) -> list[dict[str, Any]]:
+    def get_history(
+        self, max_messages: int = 50, preserve_tool_chains: bool = True
+    ) -> list[dict[str, Any]]:
         """
         Get message history for LLM context.
         Ensures tool_use -> tool_result pairs are never separated.
         """
-        recent = self.messages[-max_messages:] if len(self.messages) > max_messages else self.messages
+        recent = (
+            self.messages[-max_messages:] if len(self.messages) > max_messages else self.messages
+        )
 
         if preserve_tool_chains and recent:
             recent = self._preserve_tool_chains(recent)
@@ -117,12 +121,17 @@ class SessionManager:
                     if data.get("_type") == "metadata":
                         metadata = data.get("metadata", {})
                         created_at = (
-                            datetime.fromisoformat(data["created_at"]) if "created_at" in data else None
+                            datetime.fromisoformat(data["created_at"])
+                            if "created_at" in data
+                            else None
                         )
                     else:
                         messages.append(data)
             return Session(
-                key=key, messages=messages, created_at=created_at or datetime.now(), metadata=metadata
+                key=key,
+                messages=messages,
+                created_at=created_at or datetime.now(),
+                metadata=metadata,
             )
         except Exception as e:
             logger.warning(f"Failed to load session {key}: {e}")

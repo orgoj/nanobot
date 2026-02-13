@@ -14,6 +14,7 @@ from loguru import logger
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.context_factory import ContextBuilderFactory
 from nanobot.agent.loop_guard import tool_call_hash
+from nanobot.agent.stages import RoutingContext, RoutingStage
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -22,18 +23,17 @@ from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.todo import TodoTool
-from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.agent.tools.update_config import UpdateConfigTool
+from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.work_log_manager import LogLevel, get_work_log_manager
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider, LLMResponse
-from nanobot.session.manager import SessionManager, Session
 from nanobot.security.sanitizer import SecretSanitizer
-from nanobot.agent.stages import RoutingStage, RoutingContext
-from nanobot.agent.work_log_manager import get_work_log_manager, LogLevel
+from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import Config, ExecToolConfig, RoutingConfig, MemoryConfig
+    from nanobot.config.schema import Config, ExecToolConfig, MemoryConfig, RoutingConfig
     from nanobot.cron.service import CronService
 
 
@@ -139,12 +139,12 @@ class AgentLoop:
         self.session_compactor = None
 
         if self.memory_config and self.memory_config.enabled:
-            from nanobot.memory.store import TurboMemoryStore
             from nanobot.memory.background import ActivityTracker, BackgroundProcessor
-            from nanobot.memory.summaries import create_summary_manager
             from nanobot.memory.context import create_context_assembler
-            from nanobot.memory.retrieval import create_retrieval
             from nanobot.memory.embeddings import EmbeddingProvider
+            from nanobot.memory.retrieval import create_retrieval
+            from nanobot.memory.store import TurboMemoryStore
+            from nanobot.memory.summaries import create_summary_manager
 
             self.memory_store = TurboMemoryStore(self.memory_config, workspace)
 
@@ -194,6 +194,7 @@ class AgentLoop:
             )
 
             from nanobot.memory.session_compactor import SessionCompactor
+
             self.session_compactor = SessionCompactor(self.memory_config.session_compaction)
 
             logger.info("Turbo memory system enabled")
@@ -222,16 +223,26 @@ class AgentLoop:
             logger.info(f"Evolutionary mode enabled with allowed paths: {self.allowed_paths}")
             allowed_dirs = [Path(p).expanduser().resolve() for p in self.allowed_paths]
             protected_dirs = [Path(p).expanduser().resolve() for p in self.protected_paths]
-            self.tools.register(ReadFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
-            self.tools.register(WriteFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
-            self.tools.register(EditFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
-            self.tools.register(ListDirTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs))
+            self.tools.register(
+                ReadFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+            )
+            self.tools.register(
+                WriteFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+            )
+            self.tools.register(
+                EditFileTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+            )
+            self.tools.register(
+                ListDirTool(allowed_paths=allowed_dirs, protected_paths=protected_dirs)
+            )
 
-            self.tools.register(ExecTool(
-                working_dir=str(self.workspace),
-                timeout=self.exec_config.timeout,
-                allowed_paths=self.allowed_paths,
-            ))
+            self.tools.register(
+                ExecTool(
+                    working_dir=str(self.workspace),
+                    timeout=self.exec_config.timeout,
+                    allowed_paths=self.allowed_paths,
+                )
+            )
         else:
             allowed_dir = self.workspace if self.restrict_to_workspace else None
             self.tools.register(ReadFileTool(allowed_dir=allowed_dir))
@@ -239,11 +250,13 @@ class AgentLoop:
             self.tools.register(EditFileTool(allowed_dir=allowed_dir))
             self.tools.register(ListDirTool(allowed_dir=allowed_dir))
 
-            self.tools.register(ExecTool(
-                working_dir=str(self.workspace),
-                timeout=self.exec_config.timeout,
-                restrict_to_workspace=self.restrict_to_workspace,
-            ))
+            self.tools.register(
+                ExecTool(
+                    working_dir=str(self.workspace),
+                    timeout=self.exec_config.timeout,
+                    restrict_to_workspace=self.restrict_to_workspace,
+                )
+            )
 
         self.tools.register(WebSearchTool(api_key=self.brave_api_key))
         self.tools.register(WebFetchTool())
@@ -263,11 +276,13 @@ class AgentLoop:
 
         if self.memory_store and self.memory_retrieval:
             from nanobot.agent.tools.memory import create_memory_tools
+
             memory_tools = create_memory_tools(self.memory_store, self.memory_retrieval)
             for tool in memory_tools:
                 self.tools.register(tool)
 
         from nanobot.agent.tools.security import create_security_tools
+
         security_tools = create_security_tools()
         for tool in security_tools:
             self.tools.register(tool)
@@ -355,8 +370,14 @@ class AgentLoop:
             return False
         tail = content[-200:].lower()
         continuation_phrases = [
-            "let me check", "i will now", "next, i'll", "i'll continue",
-            "searching for", "working on", "fetching the rest", "continuing",
+            "let me check",
+            "i will now",
+            "next, i'll",
+            "i'll continue",
+            "searching for",
+            "working on",
+            "fetching the rest",
+            "continuing",
         ]
         return any(phrase in tail for phrase in continuation_phrases)
 
@@ -364,9 +385,18 @@ class AgentLoop:
         """Detect if the agent claims to have taken actions without calling tools."""
         content_lower = content.lower()
         action_claims = [
-            "i've created", "i have created", "i've modified", "i have modified",
-            "i've updated", "i have updated", "i've deleted", "i have deleted",
-            "i've written", "i have written", "i've saved", "i have saved",
+            "i've created",
+            "i have created",
+            "i've modified",
+            "i have modified",
+            "i've updated",
+            "i have updated",
+            "i've deleted",
+            "i have deleted",
+            "i've written",
+            "i have written",
+            "i've saved",
+            "i have saved",
         ]
         return any(claim in content_lower for claim in action_claims)
 
@@ -374,14 +404,17 @@ class AgentLoop:
         """Select the appropriate model using smart routing."""
         if not self.routing_stage:
             self.work_log_manager.log(
-                level=LogLevel.INFO, category="routing",
-                message="Smart routing disabled, using default model"
+                level=LogLevel.INFO,
+                category="routing",
+                message="Smart routing disabled, using default model",
             )
             return self.model
 
         try:
             routing_ctx = RoutingContext(
-                message=msg, session=session, default_model=self.model,
+                message=msg,
+                session=session,
+                default_model=self.model,
                 config=self.routing_config,
             )
             start_time = datetime.now()
@@ -390,23 +423,25 @@ class AgentLoop:
 
             if routing_ctx.decision:
                 self.work_log_manager.log(
-                    level=LogLevel.DECISION, category="routing",
+                    level=LogLevel.DECISION,
+                    category="routing",
                     message=f"Classified as {routing_ctx.decision.tier.value} tier",
                     details={
                         "tier": routing_ctx.decision.tier.value,
                         "model": routing_ctx.model,
                         "confidence": routing_ctx.decision.confidence,
-                        "layer": routing_ctx.decision.layer
+                        "layer": routing_ctx.decision.layer,
                     },
                     confidence=routing_ctx.decision.confidence,
-                    duration_ms=duration_ms
+                    duration_ms=duration_ms,
                 )
             return routing_ctx.model
         except Exception as e:
             logger.warning(f"Smart routing failed, using default model: {e}")
             self.work_log_manager.log(
-                level=LogLevel.WARNING, category="routing",
-                message=f"Smart routing failed: {str(e)}, using default model"
+                level=LogLevel.WARNING,
+                category="routing",
+                message=f"Smart routing failed: {str(e)}, using default model",
             )
             return self.model
 
@@ -428,8 +463,9 @@ class AgentLoop:
         preview = self._log_content(msg.content)
         sanitized_preview = self.sanitizer.sanitize(preview)
         self.work_log_manager.log(
-            level=LogLevel.INFO, category="general",
-            message=f"Processing user message: {sanitized_preview}"
+            level=LogLevel.INFO,
+            category="general",
+            message=f"Processing user message: {sanitized_preview}",
         )
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}: {sanitized_preview}")
 
@@ -446,6 +482,7 @@ class AgentLoop:
         # Turbo Memory: Log event
         if self.memory_store:
             from nanobot.memory.models import Event
+
             sanitized_content = self.sanitizer.sanitize(msg.content)
             event = Event(
                 id=str(uuid.uuid4()),
@@ -459,9 +496,11 @@ class AgentLoop:
             self.memory_store.save_event(event)
 
             # Detect feedback for learning
-            if hasattr(self, 'learning_manager') and session.messages:
+            if hasattr(self, "learning_manager") and session.messages:
                 try:
-                    last_assistant_msgs = [m for m in session.messages if m.get("role") == "assistant"]
+                    last_assistant_msgs = [
+                        m for m in session.messages if m.get("role") == "assistant"
+                    ]
                     if last_assistant_msgs:
                         learning = await self.learning_manager.process_message(
                             message=sanitized_content,
@@ -477,20 +516,24 @@ class AgentLoop:
         memory_context = ""
         if self.context_assembler and self.memory_retrieval:
             try:
-                self.work_log_manager.log(level=LogLevel.THINKING, category="memory", message="Retrieving context")
+                self.work_log_manager.log(
+                    level=LogLevel.THINKING, category="memory", message="Retrieving context"
+                )
                 start_time = datetime.now()
                 relevant_entities = self.context_assembler.get_relevant_entities(
                     query=self.sanitizer.sanitize(msg.content), channel=msg.channel, limit=5
                 )
                 memory_context = self.context_assembler.assemble_context(
-                    channel=msg.channel, entity_ids=[e.id for e in relevant_entities],
+                    channel=msg.channel,
+                    entity_ids=[e.id for e in relevant_entities],
                     include_preferences=True,
                 )
                 duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
                 self.work_log_manager.log(
-                    level=LogLevel.INFO, category="memory",
+                    level=LogLevel.INFO,
+                    category="memory",
                     message=f"Retrieved {len(memory_context)} chars of memory context",
-                    duration_ms=duration_ms
+                    duration_ms=duration_ms,
                 )
             except Exception as e:
                 logger.error(f"Failed to assemble memory context: {e}")
@@ -502,7 +545,9 @@ class AgentLoop:
                 if self.session_compactor.should_compact(session.messages, max_tokens):
                     result = await self.session_compactor.compact_session(session, max_tokens)
                     session.messages = result.messages
-                    logger.info(f"Session compacted: {result.tokens_before} -> {result.tokens_after}")
+                    logger.info(
+                        f"Session compacted: {result.tokens_before} -> {result.tokens_after}"
+                    )
             except Exception as e:
                 logger.error(f"Session compaction failed: {e}")
 
@@ -538,7 +583,9 @@ class AgentLoop:
             iteration += 1
 
             # Call LLM
-            logger.debug(f"LLM call (iteration {iteration}/{self.max_iterations}) using {selected_model}")
+            logger.debug(
+                f"LLM call (iteration {iteration}/{self.max_iterations}) using {selected_model}"
+            )
 
             try:
                 if stream_callback:
@@ -546,7 +593,9 @@ class AgentLoop:
                     full_reasoning = ""
                     tool_calls: list = []
                     async for chunk in self.provider.stream(
-                        messages=messages, tools=self.tools.get_definitions(), model=selected_model,
+                        messages=messages,
+                        tools=self.tools.get_definitions(),
+                        model=selected_model,
                     ):
                         if chunk.content:
                             full_content += chunk.content
@@ -564,7 +613,9 @@ class AgentLoop:
                     )
                 else:
                     response = await self.provider.chat(
-                        messages=messages, tools=self.tools.get_definitions(), model=selected_model,
+                        messages=messages,
+                        tools=self.tools.get_definitions(),
+                        model=selected_model,
                     )
             except Exception as e:
                 logger.error(f"LLM call failed: {e}")
@@ -574,10 +625,14 @@ class AgentLoop:
             # Handle tool calls
             if response.has_tool_calls:
                 # Loop detection
-                current_hashes = [tool_call_hash(tc.name, tc.arguments) for tc in response.tool_calls]
+                current_hashes = [
+                    tool_call_hash(tc.name, tc.arguments) for tc in response.tool_calls
+                ]
                 if all(h in seen_tool_hashes for h in current_hashes):
                     logger.warning("Infinite loop detected")
-                    messages.append({"role": "user", "content": "ERROR: Loop detected. Try another way."})
+                    messages.append(
+                        {"role": "user", "content": "ERROR: Loop detected. Try another way."}
+                    )
                     continue
                 for h in current_hashes:
                     seen_tool_hashes.add(h)
@@ -588,11 +643,18 @@ class AgentLoop:
 
                 # Add assistant message
                 tool_call_dicts = [
-                    {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    }
                     for tc in response.tool_calls
                 ]
                 messages = self.context.add_assistant_message(
-                    messages, response.content, tool_call_dicts, reasoning_content=response.reasoning_content,
+                    messages,
+                    response.content,
+                    tool_call_dicts,
+                    reasoning_content=response.reasoning_content,
                 )
 
                 # Execute tools in parallel (MTAAP style)
@@ -607,7 +669,9 @@ class AgentLoop:
                         return tc, res
                     except Exception as err:
                         dur = int((datetime.now() - start_t).total_seconds() * 1000)
-                        self.work_log_manager.log(LogLevel.ERROR, "tool_execution", f"Tool {tc.name} failed: {err}", dur)
+                        self.work_log_manager.log(
+                            LogLevel.ERROR, "tool_execution", f"Tool {tc.name} failed: {err}", dur
+                        )
                         return tc, f"Error: {err}"
 
                 results = await asyncio.gather(*[_exec_one(tc) for tc in response.tool_calls])
@@ -617,23 +681,50 @@ class AgentLoop:
                     session.add_message("tool", result, tool_call_id=tc.id, name=tc.name)
 
                 # Interleaved CoT
-                messages.append({"role": "user", "content": "Reflect on results and decide next steps."})
+                messages.append(
+                    {"role": "user", "content": "Reflect on results and decide next steps."}
+                )
             else:
                 # No tool calls, check for continuation or final
-                if iteration < self.max_iterations and response.content and self._needs_continuation(response.content, getattr(response, "finish_reason", None)):
+                if (
+                    iteration < self.max_iterations
+                    and response.content
+                    and self._needs_continuation(
+                        response.content, getattr(response, "finish_reason", None)
+                    )
+                ):
                     logger.info("Auto-continuation triggered")
                     if response.content and not stream_callback:
-                        await self.bus.publish_outbound(OutboundMessage(
-                            channel=msg.channel, chat_id=msg.chat_id, content=response.content, metadata=msg.metadata or {},
-                        ))
-                    messages = self.context.add_assistant_message(messages, response.content, reasoning_content=response.reasoning_content)
+                        await self.bus.publish_outbound(
+                            OutboundMessage(
+                                channel=msg.channel,
+                                chat_id=msg.chat_id,
+                                content=response.content,
+                                metadata=msg.metadata or {},
+                            )
+                        )
+                    messages = self.context.add_assistant_message(
+                        messages, response.content, reasoning_content=response.reasoning_content
+                    )
                     messages.append({"role": "user", "content": "Continue"})
                     continue
 
-                if response.content and tools_called == 0 and self._contains_unverified_actions(response.content) and iteration < self.max_iterations:
+                if (
+                    response.content
+                    and tools_called == 0
+                    and self._contains_unverified_actions(response.content)
+                    and iteration < self.max_iterations
+                ):
                     logger.warning("Action claim without tool use")
-                    messages = self.context.add_assistant_message(messages, response.content, reasoning_content=response.reasoning_content)
-                    messages.append({"role": "user", "content": "You claimed action but used no tools. Use a tool."})
+                    messages = self.context.add_assistant_message(
+                        messages, response.content, reasoning_content=response.reasoning_content
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "You claimed action but used no tools. Use a tool.",
+                        }
+                    )
                     continue
 
                 final_content = response.content
@@ -646,10 +737,17 @@ class AgentLoop:
         sanitized_final = self.sanitizer.sanitize(final_content)
         preview = self._log_content(sanitized_final)
         logger.info(f"Response to {msg.channel}:{msg.sender_id}: {preview}")
-        self.work_log_manager.log(LogLevel.INFO, "general", "Response generated successfully", {"length": len(final_content)})
+        self.work_log_manager.log(
+            LogLevel.INFO,
+            "general",
+            "Response generated successfully",
+            {"length": len(final_content)},
+        )
 
         session.add_message(
-            "assistant", sanitized_final, tools_used=tools_used if tools_used else None,
+            "assistant",
+            sanitized_final,
+            tools_used=tools_used if tools_used else None,
             reasoning_content=getattr(response, "reasoning_content", None),
         )
         self.sessions.save(session)
@@ -657,8 +755,13 @@ class AgentLoop:
         # Log outbound to Turbo Memory
         if self.memory_store:
             event = Event(
-                id=str(uuid.uuid4()), timestamp=datetime.now(), channel=msg.channel,
-                direction="outbound", event_type="message", content=sanitized_final, session_key=msg.session_key,
+                id=str(uuid.uuid4()),
+                timestamp=datetime.now(),
+                channel=msg.channel,
+                direction="outbound",
+                event_type="message",
+                content=sanitized_final,
+                session_key=msg.session_key,
             )
             self.memory_store.save_event(event)
 
@@ -669,7 +772,10 @@ class AgentLoop:
             return None
 
         return OutboundMessage(
-            channel=msg.channel, chat_id=msg.chat_id, content=final_content, metadata=msg.metadata or {},
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content=final_content,
+            metadata=msg.metadata or {},
         )
 
     async def _process_system_message(self, msg: InboundMessage) -> OutboundMessage | None:
@@ -704,7 +810,9 @@ class AgentLoop:
         final_content = None
         while iteration < self.max_iterations:
             iteration += 1
-            response = await self.provider.chat(messages=messages, tools=self.tools.get_definitions(), model=selected_model)
+            response = await self.provider.chat(
+                messages=messages, tools=self.tools.get_definitions(), model=selected_model
+            )
             if response.has_tool_calls:
                 # Basic sequential execution for announce handling
                 for tc in response.tool_calls:
@@ -715,7 +823,9 @@ class AgentLoop:
                 break
 
         if final_content:
-            return OutboundMessage(channel=origin_channel, chat_id=origin_chat_id, content=final_content)
+            return OutboundMessage(
+                channel=origin_channel, chat_id=origin_chat_id, content=final_content
+            )
         return None
 
     async def _consolidate_memory(self, session: Session) -> None:
@@ -727,9 +837,9 @@ class AgentLoop:
                 await self.session_compactor.compact_session(session, max_tokens)
             except Exception as e:
                 logger.error(f"Memory consolidation failed: {e}")
-                session.messages = session.messages[-self.memory_window:]
+                session.messages = session.messages[-self.memory_window :]
         else:
-            session.messages = session.messages[-self.memory_window:]
+            session.messages = session.messages[-self.memory_window :]
 
     async def _memory_flush_hook(self, session: Session, msg: InboundMessage) -> None:
         """Flush session context to memory before compaction."""
