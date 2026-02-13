@@ -226,28 +226,28 @@ class TelegramChannel(BaseChannel):
                                 chat_id=chat_id,
                                 photo=open(file_path, "rb"),
                                 caption=caption,
-                                parse_mode="MarkdownV2",
+                                parse_mode="HTML",
                             )
                         elif media_type == "voice":
                             await self._app.bot.send_voice(
                                 chat_id=chat_id,
                                 voice=open(file_path, "rb"),
                                 caption=caption,
-                                parse_mode="MarkdownV2",
+                                parse_mode="HTML",
                             )
                         elif media_type == "audio":
                             await self._app.bot.send_audio(
                                 chat_id=chat_id,
                                 audio=open(file_path, "rb"),
                                 caption=caption,
-                                parse_mode="MarkdownV2",
+                                parse_mode="HTML",
                             )
                         else:
                             await self._app.bot.send_document(
                                 chat_id=chat_id,
                                 document=open(file_path, "rb"),
                                 caption=caption,
-                                parse_mode="MarkdownV2",
+                                parse_mode="HTML",
                             )
                     finally:
                         if temp_path and temp_path.exists():
@@ -259,9 +259,14 @@ class TelegramChannel(BaseChannel):
             from nanobot.utils.telegram_markdown import markdown_to_telegram
 
             formatted_content = markdown_to_telegram(msg.content)
-            await self._app.bot.send_message(
-                chat_id=chat_id, text=formatted_content, parse_mode="MarkdownV2"
-            )
+            try:
+                await self._app.bot.send_message(
+                    chat_id=chat_id, text=formatted_content, parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send HTML: {e}")
+                # Last resort fallback to text if even HTML fails
+                await self._app.bot.send_message(chat_id=chat_id, text=msg.content, parse_mode=None)
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
 

@@ -3,6 +3,7 @@
 import asyncio
 import inspect
 import json
+import os
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -266,10 +267,19 @@ class AgentLoop:
                 )
             )
 
+        def resolve_key(key: str | None) -> str | None:
+            if not key:
+                return None
+            # If it's a known environment variable or matches a provider name
+            if key.isupper() and (os.environ.get(key) or key in ["Z_AI_API_KEY", "ZAI_API_KEY"]):
+                # Use provided env var or fallback to zhipu provider config
+                return os.environ.get(key) or self.config.providers.zhipu.api_key
+            return key
+
         # Web Search
         search_config = self.config.tools.web.search
         if search_config.provider == "zai":
-            api_key = search_config.zai_api_key or search_config.api_key
+            api_key = resolve_key(search_config.zai_api_key or search_config.api_key)
             self.tools.register(
                 ZaiWebSearchTool(
                     api_key=api_key,
@@ -285,7 +295,9 @@ class AgentLoop:
         # Web Fetch
         fetch_config = self.config.tools.web.fetch
         if fetch_config.provider == "zai":
-            api_key = fetch_config.zai_api_key or search_config.zai_api_key or search_config.api_key
+            api_key = resolve_key(
+                fetch_config.zai_api_key or search_config.zai_api_key or search_config.api_key
+            )
             self.tools.register(
                 ZaiWebFetchTool(
                     api_key=api_key,

@@ -1,96 +1,128 @@
-"""Telegram Markdown formatting utilities."""
+"""Telegram HTML formatting utilities with ASCII table support."""
 
+import html
 import re
 
+from markdown_it import MarkdownIt
 
-def markdown_to_telegram(text: str, parse_mode: str = "MarkdownV2") -> str:
-    """
-    Convert clean Markdown to Telegram-compatible format.
 
-    Args:
-        text: Markdown text from the agent
-        parse_mode: "MarkdownV2" (default) or "Markdown" (legacy)
+def format_ascii_table(rows):
+    """Render a 2D list of strings as an aligned ASCII table."""
+    if not rows or not rows[0]:
+        return ""
 
-    Returns:
-        Escaped text for Telegram
-    """
+    # Calculate max width for each column
+    num_cols = len(rows[0])
+    widths = [0] * num_cols
+    for row in rows:
+        for i in range(min(len(row), num_cols)):
+            widths[i] = max(widths[i], len(str(row[i])))
+
+    # Build the table
+    sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+    result = [sep]
+
+    for i, row in enumerate(rows):
+        # Ensure row has correct number of columns
+        cells = list(row) + [""] * (num_cols - len(row))
+        formatted_row = (
+            "|" + "|".join(f" {str(c).ljust(widths[j])} " for j, c in enumerate(cells)) + "|"
+        )
+        result.append(formatted_row)
+        if i == 0:  # Add separator after header
+            result.append(sep)
+
+    result.append(sep)
+    return "\n".join(result)
+
+
+def markdown_to_html(text: str) -> str:
+    """Convert Markdown to Telegram-compatible HTML with beautiful ASCII tables."""
     if not text:
         return ""
 
-    if parse_mode == "Markdown":
-        # Legacy Markdown: escape _, *, [, `
-        return re.sub(r"([_*\[`])", r"\\\1", text)
+    md = MarkdownIt().enable("table")
+    tokens = md.parse(text)
 
-    if parse_mode != "MarkdownV2":
-        return text
+    def render(tokens):
+        if not tokens:
+            return ""
+        result = ""
 
-    # MarkdownV2 requires escaping: _ * [ ] ( ) ~ ` > # + - = | { } . !
-    # But we must NOT escape them if they are part of a valid Markdown construct.
+        # State for table parsing
+        table_rows = []
+        current_row = []
+        in_table = False
 
-    # 1. Protect code blocks and inline code
-    code_parts = []
+        for i, token in enumerate(tokens):
+            # --- Table Logic ---
+            if token.type == "table_open":
+                in_table = True
+                table_rows = []
+                continue
+            elif token.type == "table_close":
+                in_table = False
+                result += f"<pre>\n{html.escape(format_ascii_table(table_rows))}\n</pre>\n"
+                continue
 
-    def save_code(match):
-        code_parts.append(match.group(0))
-        return f"\x01C{len(code_parts) - 1}\x01"
+            if in_table:
+                if token.type == "tr_open":
+                    current_row = []
+                elif token.type == "tr_close":
+                    table_rows.append(current_row)
+                elif token.type == "inline" and tokens[i - 1].type in ["th_open", "td_open"]:
+                    # Get the rendered content of the cell
+                    current_row.append(render(token.children))
+                continue
 
-    # Save triple backtick blocks first
-    processed = re.sub(r"```[\s\S]*?```", save_code, text)
-    # Save inline code
-    processed = re.sub(r"`[^`\n]+`", save_code, processed)
+            # --- Standard Formatting ---
+            if token.type == "inline":
+                result += render(token.children)
+                continue
 
-    # 2. Protect links: [text](url)
-    link_parts = []
+            content = html.escape(token.content) if token.content else ""
 
-    def save_link(match):
-        link_parts.append(match.group(0))
-        return f"\x01L{len(link_parts) - 1}\x01"
+            if token.type == "heading_open":
+                result += "<b>"
+            elif token.type == "heading_close":
+                result += "</b>\n"
+            elif token.type == "strong_open":
+                result += "<b>"
+            elif token.type == "strong_close":
+                result += "</b>"
+            elif token.type == "em_open":
+                result += "<i>"
+            elif token.type == "em_close":
+                result += "</i>"
+            elif token.type == "code_inline":
+                result += f"<code>{content}</code>"
+            elif token.type == "fence":
+                result += f"<pre>{content}</pre>\n"
+            elif token.type == "link_open":
+                href = html.escape(token.attrGet("href") or "")
+                result += f'<a href="{href}">'
+            elif token.type == "link_close":
+                result += "</a>"
+            elif token.type == "text":
+                result += content
+            elif token.type == "list_item_open":
+                result += "• "
+            elif token.type == "list_item_close":
+                result += "\n"
+            elif token.type == "paragraph_close":
+                result += "\n\n"
+            elif token.type == "softbreak" or token.type == "hardbreak":
+                result += "\n"
+            elif token.type == "blockquote_open":
+                result += "<blockquote>"
+            elif token.type == "blockquote_close":
+                result += "</blockquote>\n"
 
-    processed = re.sub(r"\[[^\]]+\]\([^)]+\)", save_link, processed)
+        return result
 
-    # 3. Escape all special characters in the remaining text
-    # Characters to escape: _ * [ ] ( ) ~ ` > # + - = | { } . !
-    processed = re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", processed)
+    output = render(tokens)
+    return re.sub(r"\n{3,}", "\n\n", output).strip()
 
-    # 4. Restore links and escape their internal parts correctly
-    # Inside (...) part of a link, only ) and \ must be escaped.
-    for i, link in enumerate(link_parts):
-        m = re.match(r"\[([^\]]+)\]\(([^)]+)\)", link)
-        if m:
-            label, url = m.groups()
-            # Telegram: In all other places [than pre/code], characters '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
-            # must be escaped with the preceding character '\'.
-            # In (url) part of inline link, all characters ')' and '\' must be escaped with a preceding '\' character.
 
-            # Special case for URLs: Telegram also seems to allow/require escapement of other chars
-            # in MarkdownV2 URLs if they are not part of the URL spec, but basically ) and \ are MUST.
-            escaped_url = url.replace("\\", "\\\\").replace(")", "\\)")
-
-            # For the label, we want to allow standard Markdown like *bold* or _italic_
-            # but escape other special characters like . or ! or -
-            # Given the requirement "*bold*" -> "\*bold\*", it means they want to pass Markdown
-            # through. To do that in MarkdownV2, you MUST escape the marks themselves.
-            def escape_label(text):
-                return re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", text)
-
-            escaped_label = escape_label(label)
-            processed = processed.replace(f"\x01L{i}\x01", f"[{escaped_label}]({escaped_url})")
-
-    # 5. Restore code blocks
-    for i, code in enumerate(code_parts):
-        # Inside code blocks, only \ and ` must be escaped
-        if code.startswith("```"):
-            inner = code[3:-3]
-            # Telegram says: inside pre and code entities, all '`' and '\' characters
-            # must be escaped with a preceding '\' character.
-            # However, my previous attempt was escaping OTHER chars inside code because
-            # they were escaped in step 3. But code blocks were protected in step 1.
-            # So they should be fine.
-            escaped_inner = inner.replace("\\", "\\\\").replace("`", "\\`").replace("\x01", "")
-            processed = processed.replace(f"\x01C{i}\x01", f"```{escaped_inner}```")
-        else:
-            inner = code[1:-1]
-            escaped_inner = inner.replace("\\", "\\\\").replace("`", "\\`").replace("\x01", "")
-            processed = processed.replace(f"\x01C{i}\x01", f"`{escaped_inner}`")
-
-    return processed
+def markdown_to_telegram(text: str) -> str:
+    return markdown_to_html(text)

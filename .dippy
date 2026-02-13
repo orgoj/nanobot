@@ -8,6 +8,7 @@ deny python* -m compileall * "USE: uv run python -m compileall"
 allow uv run python -m compileall *
 allow uv run python -m pytest *
 allow uv run pytest *
+allow PYTHONPATH=. uv run pytest *
 allow ./test-docker.sh
 
 allow-read /home/michael/work/ai/ZAI/TOOLS/zai-cli-dev/**

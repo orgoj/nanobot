@@ -1,2 +1,2 @@
 #!/bin/bash
-uv run nanobot "$@"
+PYTHONPATH=. uv run nanobot "$@"

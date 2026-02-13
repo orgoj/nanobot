@@ -1,234 +1,115 @@
-"""Z.AI Web tools: web_search and web_fetch using ZAI MCP."""
+"""Z.AI Web tools using the official MCP Python SDK with Streamable HTTP transport."""
 
 import json
 import os
-import uuid
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
+from loguru import logger
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 
 from nanobot.agent.tools.base import Tool
 
-# Default Endpoints (can be overridden by config)
-ZAI_SEARCH_ENDPOINT = "https://api.z.ai/api/mcp/web_search_prime/mcp"
-ZAI_READER_ENDPOINT = "https://api.z.ai/api/mcp/web_reader/mcp"
+# Real MCP endpoints for GLM Coding Plan
+ZAI_SEARCH_URL = "https://api.z.ai/api/mcp/web_search_prime/mcp"
+ZAI_READER_URL = "https://api.z.ai/api/mcp/web_reader/mcp"
 
 
-class ZaiClient:
-    """Minimal MCP HTTP Client for Z.AI."""
+class ZaiMcpBase:
+    """Helper class for ZAI tools using the official MCP SDK with Streamable HTTP."""
 
-    def __init__(self, api_key: str, base_url: str):
-        self.api_key = api_key
-        self.base_url = base_url
-        self.headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
+    def __init__(self, url: str, api_key: str | None = None):
+        self._url = url
+        self._api_key = api_key or os.environ.get("Z_AI_API_KEY")
+
+    async def _call_mcp(self, tool_name: str, arguments: dict[str, Any]) -> Any:
+        if not self._api_key:
+            return "Error: Z_AI_API_KEY is not configured."
+
+        # Headers for the underlying HTTP client
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
         }
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
-        """Call a tool via MCP over HTTP (SSE + POST)."""
-        request_id = str(uuid.uuid4())
+        try:
+            # We create our own AsyncClient to provide the necessary Authorization header
+            async with httpx.AsyncClient(headers=headers, timeout=60.0) as http_client:
+                async with streamable_http_client(url=self._url, http_client=http_client) as (
+                    read_stream,
+                    write_stream,
+                    _,
+                ):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        # Step 1: Initialize session
+                        await session.initialize()
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            # Connect to SSE endpoint
-            async with client.stream("GET", self.base_url, headers=self.headers) as response:
-                response.raise_for_status()
+                        # Step 2: Call tool
+                        result = await session.call_tool(tool_name, arguments)
 
-                event_type = None
-                post_endpoint = None
+                        # Step 3: Extract text from response
+                        full_text = "".join(
+                            [content.text for content in result.content if hasattr(content, "text")]
+                        )
 
-                # Simple SSE parser
-                async for line in response.aiter_lines():
-                    if not line.strip():
-                        event_type = None
-                        continue
-
-                    if line.startswith("event:"):
-                        event_type = line.split(":", 1)[1].strip()
-                    elif line.startswith("data:"):
-                        data = line.split(":", 1)[1].strip()
-
-                        if event_type == "endpoint":
-                            post_endpoint = data
-                            if not post_endpoint.startswith("http"):
-                                post_endpoint = urljoin(str(response.url), post_endpoint)
-
-                            # Send the tool call
-                            payload = {
-                                "jsonrpc": "2.0",
-                                "id": request_id,
-                                "method": "tools/call",
-                                "params": {"name": tool_name, "arguments": arguments},
-                            }
-
-                            # Use a separate call for POST
-                            await client.post(
-                                post_endpoint,
-                                json=payload,
-                                headers={
-                                    "Content-Type": "application/json",
-                                    "Authorization": f"Bearer {self.api_key}",
-                                },
-                            )
-
-                        elif event_type == "message":
-                            try:
-                                msg = json.loads(data)
-                                if msg.get("id") == request_id:
-                                    if "error" in msg:
-                                        raise Exception(f"RPC Error: {msg['error']}")
-
-                                    # MCP tool call result structure
-                                    result = msg.get("result", {})
-                                    if result.get("isError"):
-                                        raise Exception(f"Tool execution error: {result}")
-
-                                    # Extract content
-                                    content_items = result.get("content", [])
-                                    text_content = []
-                                    for item in content_items:
-                                        if item.get("type") == "text":
-                                            text_content.append(item.get("text", ""))
-
-                                    full_text = "\n".join(text_content)
-
-                                    # Try to parse as JSON if it looks like it
-                                    try:
-                                        return json.loads(full_text)
-                                    except json.JSONDecodeError:
-                                        return full_text
-                            except json.JSONDecodeError:
-                                pass
+                        try:
+                            return json.loads(full_text)
+                        except (json.JSONDecodeError, TypeError):
+                            return full_text
+        except Exception as e:
+            logger.error(f"MCP HTTP Call to {tool_name} failed: {e}")
+            return f"Error: {str(e)}"
 
 
-class ZaiWebSearchTool(Tool):
-    """Search the web using Z.AI WebSearchPrime."""
-
+class ZaiWebSearchTool(Tool, ZaiMcpBase):
     name = "web_search"
-    description = "Search the web using Z.AI. Returns titles, URLs, and snippets."
+    description = "Search the web using Z.AI Prime."
     parameters = {
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Search query"},
-            "count": {
-                "type": "integer",
-                "description": "Results (1-10)",
-                "minimum": 1,
-                "maximum": 10,
-            },
+            "count": {"type": "integer", "default": 10},
         },
         "required": ["query"],
     }
 
-    def __init__(
-        self, api_key: str | None = None, base_url: str | None = None, max_results: int = 5
-    ):
-        self.api_key = api_key or os.environ.get("Z_AI_API_KEY") or os.environ.get("ZAI_API_KEY")
-        self.base_url = base_url or ZAI_SEARCH_ENDPOINT
-        self.max_results = max_results
+    def __init__(self, api_key: str | None = None, **kwargs):
+        Tool.__init__(self)
+        ZaiMcpBase.__init__(self, url=ZAI_SEARCH_URL, api_key=api_key)
 
-    async def execute(self, query: str, count: int | None = None, **kwargs: Any) -> str:
-        if not self.api_key:
-            return "Error: Z_AI_API_KEY not configured"
-
-        client = ZaiClient(self.api_key, self.base_url)
-        try:
-            # Map parameters to webSearchPrime
-            n = min(max(count or self.max_results, 1), 10)
-            args = {
-                "search_query": query,
-            }
-
-            results = await client.call_tool("webSearchPrime", args)
-
-            # results should be a list of objects
-            if isinstance(results, str):
-                return results  # Error or raw string
-
-            if not isinstance(results, list):
-                # Maybe it's wrapped?
-                return str(results)
-
-            lines = [f"Results for: {query}\n"]
-            for i, item in enumerate(results[:n], 1):
-                # Normalize keys
-                title = item.get("title", "")
-                url = item.get("link", "")
-                content = item.get("content", "") or item.get("summary", "")
-
-                lines.append(f"{i}. {title}\n   {url}")
-                if content:
-                    lines.append(f"   {content}")
-            return "\n".join(lines)
-
-        except Exception as e:
-            return f"Error executing Z.AI search: {e}"
+    async def execute(self, query: str, count: int = 10, **kwargs: Any) -> str:
+        results = await self._call_mcp("webSearchPrime", {"search_query": query})
+        if not isinstance(results, list):
+            return str(results)
+        lines = [f"Results for: {query}\n"]
+        for i, item in enumerate(results[:count], 1):
+            title = item.get("title") or "No Title"
+            link = item.get("link") or item.get("url") or ""
+            content = item.get("content") or item.get("summary") or ""
+            lines.append(f"{i}. {title}\n   {link}\n   {content}")
+        return "\n".join(lines)
 
 
-class ZaiWebFetchTool(Tool):
-    """Fetch and extract content using Z.AI Web Reader."""
-
+class ZaiWebFetchTool(Tool, ZaiMcpBase):
     name = "web_fetch"
-    description = "Fetch URL and extract readable content (HTML → markdown/text)."
+    description = "Fetch URL and extract content using Z.AI Reader."
     parameters = {
         "type": "object",
         "properties": {
             "url": {"type": "string", "description": "URL to fetch"},
-            "extract_mode": {
-                "type": "string",
-                "enum": ["markdown", "text"],
-                "default": "markdown",
-            },
-            "max_chars": {"type": "integer", "minimum": 100},
+            "extract_mode": {"type": "string", "enum": ["markdown", "text"], "default": "markdown"},
         },
         "required": ["url"],
     }
 
-    def __init__(
-        self, api_key: str | None = None, base_url: str | None = None, max_chars: int = 50000
-    ):
-        self.api_key = api_key or os.environ.get("Z_AI_API_KEY") or os.environ.get("ZAI_API_KEY")
-        self.base_url = base_url or ZAI_READER_ENDPOINT
-        self.max_chars = max_chars
+    def __init__(self, api_key: str | None = None, **kwargs):
+        Tool.__init__(self)
+        ZaiMcpBase.__init__(self, url=ZAI_READER_URL, api_key=api_key)
 
-    async def execute(
-        self,
-        url: str,
-        extract_mode: str = "markdown",
-        max_chars: int | None = None,
-        **kwargs: Any,
-    ) -> str:
-        if not self.api_key:
-            return json.dumps({"error": "Z_AI_API_KEY not configured", "url": url})
-
-        client = ZaiClient(self.api_key, self.base_url)
-        max_chars = max_chars or self.max_chars
-
-        try:
-            args = {"url": url, "return_format": extract_mode, "no_cache": True}
-
-            # Tool name: 'webReader'
-            result = await client.call_tool("webReader", args)
-
-            text = str(result)
-            truncated = len(text) > max_chars
-            if truncated:
-                text = text[:max_chars]
-
-            # Try to match the output format of original WebFetchTool
-            return json.dumps(
-                {
-                    "url": url,
-                    "finalUrl": url,  # We don't know the final URL from ZAI reader easily
-                    "status": 200,
-                    "extractor": "zai-reader",
-                    "truncated": truncated,
-                    "length": len(text),
-                    "text": text,
-                }
-            )
-
-        except Exception as e:
-            return json.dumps({"error": f"Error executing Z.AI fetch: {e}", "url": url})
+    async def execute(self, url: str, extract_mode: str = "markdown", **kwargs: Any) -> str:
+        result = await self._call_mcp("webReader", {"url": url, "return_format": extract_mode})
+        if isinstance(result, str) and result.startswith("Error:"):
+            return json.dumps({"error": result, "url": url})
+        return json.dumps(
+            {"url": url, "status": 200, "text": str(result), "extractor": "zai-mcp-http"}
+        )
