@@ -57,8 +57,8 @@ class ZaiMcpBase:
                         except (json.JSONDecodeError, TypeError):
                             return full_text
         except Exception as e:
-            logger.error(f"MCP HTTP Call to {tool_name} failed: {e}")
-            return f"Error: {str(e)}"
+            logger.error(f"MCP Call to {tool_name} failed catastrophically: {e}")
+            return f"Error: Tool execution failed. This might be due to an invalid API key or service being down. Technical details: {str(e)}"
 
 
 class ZaiWebSearchTool(Tool, ZaiMcpBase):

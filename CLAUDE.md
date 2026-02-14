@@ -12,6 +12,7 @@
 
 - **Isolated Testing ONLY**: Only run code changes if they are covered by isolated unit tests that do not touch `~/.nanobot/`.
 - **Use Docker**: All integration testing and runtime behavior checks must be performed inside a Docker container.
+- **NO SECRETS IN OUTPUT**: Never display, print, or log API keys, tokens, or credentials. Use environment variables. If a secret is accidentally leaked in the tool output, it must be reported and immediately redacted.
 
 ## Project Overview
 

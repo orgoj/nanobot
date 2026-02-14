@@ -28,20 +28,21 @@ class ChannelManager:
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
 
-        self._init_channels()
-
-    def _init_channels(self) -> None:
-        """Initialize channels based on config."""
-
         # Telegram channel
         if self.config.channels.telegram.enabled:
             try:
+                # Resolve token from environment if config points to a variable name
+                import copy
+
                 from nanobot.channels.telegram import TelegramChannel
 
+                tg_cfg = copy.deepcopy(self.config.channels.telegram)
+                tg_cfg.token = self.config.resolve_value(tg_cfg.token)
+
                 self.channels["telegram"] = TelegramChannel(
-                    self.config.channels.telegram,
+                    tg_cfg,
                     self.bus,
-                    groq_api_key=self.config.providers.groq.api_key,
+                    groq_api_key=self.config.get_api_key("groq"),
                 )
                 logger.info("Telegram channel enabled")
             except ImportError as e:

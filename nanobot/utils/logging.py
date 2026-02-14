@@ -64,7 +64,7 @@ def setup_logging(config: Config):
     logger.add(
         str(log_file),
         level=config.logging.level,
-        format=jsonl_serializer,
+        format=lambda r: jsonl_serializer(r).replace("{", "{{").replace("}", "}}"),
     )
 
     logger.info(f"Logging initialized. File: {log_file}")

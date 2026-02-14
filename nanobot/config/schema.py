@@ -211,6 +211,8 @@ class AgentDefaults(BaseModel):
     max_tool_iterations: int = 20
     task_max_iterations: int = 30  # Max iterations for subagents
     memory_window: int = 50
+    startup_prompt: str | None = None
+    startup_target: str = "cli:direct"
 
 
 class AgentsConfig(BaseModel):
@@ -324,19 +326,29 @@ class Config(BaseSettings):
         """Match provider config and its registry name. Returns (config, spec_name)."""
         from nanobot.providers.registry import PROVIDERS
 
-        model_lower = (model or self.agents.defaults.model).lower()
+        model_val = model or self.agents.defaults.model
+        model_lower = model_val.lower()
 
-        # Match by keyword (order follows PROVIDERS registry)
+        # 1. Match by keyword (order follows PROVIDERS registry)
         for spec in PROVIDERS:
             p = getattr(self.providers, spec.name, None)
             if p and any(kw in model_lower for kw in spec.keywords) and p.api_key:
                 return p, spec.name
 
-        # Fallback: gateways first, then others (follows registry order)
+        # 2. Match by exact provider name (e.g. if model is just "zhipu")
         for spec in PROVIDERS:
-            p = getattr(self.providers, spec.name, None)
-            if p and p.api_key:
-                return p, spec.name
+            if spec.name == model_lower:
+                p = getattr(self.providers, spec.name, None)
+                if p and p.api_key:
+                    return p, spec.name
+
+        # 3. Fallback only if no specific model was requested
+        if model is None:
+            for spec in PROVIDERS:
+                p = getattr(self.providers, spec.name, None)
+                if p and p.api_key:
+                    return p, spec.name
+
         return None, None
 
     def get_provider(self, model: str | None = None) -> ProviderConfig | None:
@@ -350,9 +362,44 @@ class Config(BaseSettings):
         return name
 
     def get_api_key(self, model: str | None = None) -> str | None:
-        """Get API key for the given model. Falls back to first available key."""
-        p = self.get_provider(model)
-        return p.api_key if p else None
+        """Get API key for the given model. Falls back to environment variables."""
+        import os
+
+        from nanobot.providers.registry import find_by_name
+
+        p, name = self._match_provider(model)
+
+        # 1. If YAML has a value, check it
+        if p and p.api_key:
+            val = p.api_key.strip()
+            # If it's a pointer to an env var (ALL_UPPERCASE)
+            if val.isupper() and os.environ.get(val):
+                return os.environ.get(val)
+            # If it's an actual key (not a known placeholder)
+            if val not in ["Z_AI_API_KEY", "ZAI_API_KEY", "API_KEY", "TELEGRAM_TOKEN"]:
+                return val
+
+        # 2. Pure Environment Fallback based on provider name
+        if name:
+            spec = find_by_name(name)
+            if spec and os.environ.get(spec.env_key):
+                return os.environ.get(spec.env_key)
+
+        return None
+
+    def resolve_value(self, value: str | None) -> str | None:
+        """Generic resolver: if value matches an environment variable name, return its content."""
+        import os
+
+        if not value:
+            return None
+
+        val = str(value).strip()
+        # If it looks like an env var name (UPPER_CASE) and exists in OS environment
+        if val.isupper() and os.environ.get(val):
+            return os.environ.get(val)
+
+        return value
 
     def get_api_base(self, model: str | None = None) -> str | None:
         """Get API base URL for the given model. Applies default URLs for known gateways."""

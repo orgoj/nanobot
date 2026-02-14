@@ -291,18 +291,24 @@ def _make_provider(config):
     """Create LiteLLMProvider from config. Exits if no API key found."""
     from nanobot.providers.litellm_provider import LiteLLMProvider
 
-    p = config.get_provider()
     model = config.agents.defaults.model
-    if not (p and p.api_key) and not model.startswith("bedrock/"):
-        console.print("[red]Error: No API key configured.[/red]")
-        console.print("Set one in ~/.nanobot/config.yaml under providers section")
+    api_key = config.get_api_key(model)
+
+    if not api_key and not model.startswith("bedrock/"):
+        console.print("[red]Error: No API key found in config or environment.[/red]")
+        console.print(
+            "Set one in [cyan]~/.nanobot/config.yaml[/cyan] or as an environment variable"
+        )
+        console.print("Example: [bold]export ZAI_API_KEY=your-key-here[/bold]")
         raise typer.Exit(1)
+
+    p = config.get_provider(model)
     return LiteLLMProvider(
-        api_key=p.api_key if p else None,
-        api_base=config.get_api_base(),
+        api_key=api_key,
+        api_base=config.get_api_base(model),
         default_model=model,
         extra_headers=p.extra_headers if p else None,
-        provider_name=config.get_provider_name(),
+        provider_name=config.get_provider_name(model),
     )
 
 
@@ -333,7 +339,11 @@ def gateway(
 
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
 
+    from nanobot.utils.logging import setup_logging
+
     config = load_config()
+    setup_logging(config)
+
     bus = MessageBus()
     provider = _make_provider(config)
     session_manager = SessionManager(config.workspace_path)
@@ -408,6 +418,40 @@ def gateway(
         try:
             await cron.start()
             await heartbeat.start()
+
+            # Run startup prompt if configured
+            if config.agents.defaults.startup_prompt:
+                target = config.agents.defaults.startup_target or "cli:direct"
+                channel = "cli"
+                chat_id = "direct"
+                if ":" in target:
+                    channel, chat_id = target.split(":", 1)
+
+                async def run_startup():
+                    # Wait a bit for channels to initialize and connect
+                    await asyncio.sleep(5)
+                    console.print(
+                        f"[cyan]Running startup prompt: {config.agents.defaults.startup_prompt}[/cyan]"
+                    )
+                    response = await agent.process_direct(
+                        config.agents.defaults.startup_prompt,
+                        session_key=f"startup:{target}",
+                        channel=channel,
+                        chat_id=chat_id,
+                    )
+                    if response:
+                        from nanobot.bus.events import OutboundMessage
+
+                        await bus.publish_outbound(
+                            OutboundMessage(
+                                channel=channel,
+                                chat_id=chat_id,
+                                content=response,
+                            )
+                        )
+
+                asyncio.create_task(run_startup())
+
             await asyncio.gather(
                 agent.run(),
                 channels.start_all(),
@@ -444,8 +488,10 @@ def agent(
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.config.loader import load_config
+    from nanobot.utils.logging import setup_logging
 
     config = load_config()
+    setup_logging(config)
 
     bus = MessageBus()
     provider = _make_provider(config)

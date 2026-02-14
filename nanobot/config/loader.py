@@ -1,5 +1,6 @@
 """Configuration loading utilities."""
 
+import os
 from pathlib import Path
 
 import yaml
@@ -27,6 +28,28 @@ def get_data_dir() -> Path:
     return get_data_path()
 
 
+def load_env() -> None:
+    """Load environment variables from ~/.nanobot/.env if it exists."""
+    env_path = Path.home() / ".nanobot" / ".env"
+    if not env_path.exists():
+        return
+
+    try:
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key:
+                        os.environ.setdefault(key, val)
+    except Exception as e:
+        print(f"Warning: Failed to load .env from {env_path}: {e}")
+
+
 def load_config(config_path: Path | None = None) -> Config:
     """
     Load configuration from YAML file or create default.
@@ -37,6 +60,9 @@ def load_config(config_path: Path | None = None) -> Config:
     Returns:
         Loaded configuration object.
     """
+    # Always try to load .env first
+    load_env()
+
     path = config_path or get_config_path()
 
     if path.exists():

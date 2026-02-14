@@ -184,70 +184,84 @@ class SubagentManager:
                 while iteration < self.max_iterations:
                     iteration += 1
 
-                    # 1. Check mailbox for supervisor guidance
-                    while not state.mailbox.empty():
-                        guidance = await state.mailbox.get()
-                        logger.info(f"Subagent [{task_id}] received guidance: {guidance[:50]}...")
-                        state.messages.append(
-                            {
-                                "role": "user",
-                                "content": f"<SupervisorCorrection>\n{guidance}\n</SupervisorCorrection>",
-                            }
-                        )
-
-                    # 2. Call LLM
-                    response = await self.provider.chat(
-                        messages=state.messages,
-                        tools=tools.get_definitions(),
-                        model=self.model,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
-
-                    if response.has_tool_calls:
-                        # Add assistant message with tool calls
-                        tool_call_dicts = [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": json.dumps(tc.arguments),
-                                },
-                            }
-                            for tc in response.tool_calls
-                        ]
-                        state.messages.append(
-                            {
-                                "role": "assistant",
-                                "content": response.content or "",
-                                "tool_calls": tool_call_dicts,
-                                "reasoning_content": response.reasoning_content,
-                            }
-                        )
-
-                        # Execute tools
-                        for tc in response.tool_calls:
-                            logger.debug(f"Subagent [{task_id}] tool: {tc.name}")
-                            result = await tools.execute(tc.name, tc.arguments)
+                    try:
+                        # 1. Check mailbox for supervisor guidance
+                        while not state.mailbox.empty():
+                            guidance = await state.mailbox.get()
+                            logger.info(
+                                f"Subagent [{task_id}] received guidance: {guidance[:50]}..."
+                            )
                             state.messages.append(
                                 {
-                                    "role": "tool",
-                                    "tool_call_id": tc.id,
-                                    "name": tc.name,
-                                    "content": result,
+                                    "role": "user",
+                                    "content": f"<SupervisorCorrection>\n{guidance}\n</SupervisorCorrection>",
                                 }
                             )
-                        # Add reflection prompt after tool execution
+
+                        # 2. Call LLM
+                        response = await self.provider.chat(
+                            messages=state.messages,
+                            tools=tools.get_definitions(),
+                            model=self.model,
+                            temperature=self.temperature,
+                            max_tokens=self.max_tokens,
+                        )
+
+                        if response.has_tool_calls:
+                            # Add assistant message with tool calls
+                            tool_call_dicts = [
+                                {
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.name,
+                                        "arguments": json.dumps(tc.arguments),
+                                    },
+                                }
+                                for tc in response.tool_calls
+                            ]
+                            state.messages.append(
+                                {
+                                    "role": "assistant",
+                                    "content": response.content or "",
+                                    "tool_calls": tool_call_dicts,
+                                    "reasoning_content": response.reasoning_content,
+                                }
+                            )
+
+                            # Execute tools
+                            for tc in response.tool_calls:
+                                logger.debug(f"Subagent [{task_id}] tool: {tc.name}")
+                                result = await tools.execute(tc.name, tc.arguments)
+                                state.messages.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tc.id,
+                                        "name": tc.name,
+                                        "content": result,
+                                    }
+                                )
+                            # Add reflection prompt after tool execution
+                            state.messages.append(
+                                {
+                                    "role": "user",
+                                    "content": "Reflect on the results and decide next steps.",
+                                }
+                            )
+                        else:
+                            state.last_result = response.content
+                            break
+                    except Exception as e:
+                        logger.error(f"Subagent [{task_id}] loop iteration {iteration} error: {e}")
                         state.messages.append(
                             {
                                 "role": "user",
-                                "content": "Reflect on the results and decide next steps.",
+                                "content": f"INTERNAL ERROR during subagent execution: {str(e)}\nPlease try to recover or summarize the failure.",
                             }
                         )
-                    else:
-                        state.last_result = response.content
-                        break
+                        if iteration >= self.max_iterations:
+                            state.last_result = f"Subagent failed after multiple internal errors. Last error: {str(e)}"
+                            break
 
                 if state.last_result is None:
                     state.last_result = "Task reached maximum iterations without final response."

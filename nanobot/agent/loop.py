@@ -145,7 +145,9 @@ class AgentLoop:
         if search_config.provider == "zai":
             self.tools.register(
                 ZaiWebSearchTool(
-                    api_key=search_config.zai_api_key or self.config.get_api_key("zai"),
+                    api_key=self.config.resolve_value(
+                        search_config.zai_api_key or search_config.api_key
+                    ),
                     base_url=search_config.zai_base_url,
                 )
             )
@@ -156,7 +158,9 @@ class AgentLoop:
         if fetch_config.provider == "zai":
             self.tools.register(
                 ZaiWebFetchTool(
-                    api_key=fetch_config.zai_api_key or self.config.get_api_key("zai"),
+                    api_key=self.config.resolve_value(
+                        fetch_config.zai_api_key or search_config.zai_api_key
+                    ),
                     base_url=fetch_config.zai_base_url,
                 )
             )
@@ -211,44 +215,54 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
 
-            response = await self.provider.chat(
-                messages=messages,
-                tools=self.tools.get_definitions(),
-                model=self.model,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-
-            if response.has_tool_calls:
-                tool_call_dicts = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
-                    }
-                    for tc in response.tool_calls
-                ]
-                messages = self.context.add_assistant_message(
-                    messages,
-                    response.content,
-                    tool_call_dicts,
-                    reasoning_content=response.reasoning_content,
+            try:
+                response = await self.provider.chat(
+                    messages=messages,
+                    tools=self.tools.get_definitions(),
+                    model=self.model,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
                 )
 
-                for tool_call in response.tool_calls:
-                    tools_used.append(tool_call.name)
-                    args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
-                    logger.info(f"Tool call: {tool_call.name}({args_str[:200]})")
-                    result = await self.tools.execute(tool_call.name, tool_call.arguments)
-                    messages = self.context.add_tool_result(
-                        messages, tool_call.id, tool_call.name, result
+                if response.has_tool_calls:
+                    tool_call_dicts = [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                        }
+                        for tc in response.tool_calls
+                    ]
+                    messages = self.context.add_assistant_message(
+                        messages,
+                        response.content,
+                        tool_call_dicts,
+                        reasoning_content=response.reasoning_content,
                     )
-                messages.append(
-                    {"role": "user", "content": "Reflect on the results and decide next steps."}
-                )
-            else:
-                final_content = response.content
-                break
+
+                    for tool_call in response.tool_calls:
+                        tools_used.append(tool_call.name)
+                        args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
+                        logger.info(f"Tool call: {tool_call.name}({args_str[:200]})")
+                        result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, result
+                        )
+                    messages.append(
+                        {"role": "user", "content": "Reflect on the results and decide next steps."}
+                    )
+                else:
+                    final_content = response.content
+                    break
+            except Exception as e:
+                logger.error(f"Critical error in agent loop iteration {iteration}: {e}")
+                # Inject error back to the model so it can explain what happened
+                error_msg = f"INTERNAL ERROR during iteration {iteration}: {str(e)}\nPlease inform the user about this technical issue."
+                messages.append({"role": "user", "content": error_msg})
+                # If we keep failing, we should eventually break to avoid infinite loops
+                if iteration >= self.max_iterations:
+                    final_content = f"I'm sorry, I've encountered multiple internal errors and cannot proceed. Last error: {str(e)}"
+                    break
 
         return final_content, tools_used
 
