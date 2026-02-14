@@ -102,8 +102,8 @@ You are nanobot, a helpful AI assistant. You have access to tools that allow you
 
 ## Current Time
 - Now: {now_str} ({tz})
-- Session started: {session_start_str}
-- Session duration: {duration_str}
+- Process started: {session_start_str}
+- Process duration: {duration_str}
 
 RULE: Always reference actual time, never hallucinate durations.
 

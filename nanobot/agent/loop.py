@@ -309,6 +309,9 @@ class AgentLoop:
             if len(session.messages) > self.memory_window:
                 asyncio.create_task(self._consolidate_memory(session))
 
+            # Add user message to history early
+            session.add_message("user", msg.content)
+
             self._set_tool_context(msg.channel, msg.chat_id)
             initial_messages = self.context.build_messages(
                 history=session.get_history(max_messages=self.memory_window),
@@ -325,7 +328,6 @@ class AgentLoop:
             preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
             logger.info(f"Response: {preview}")
 
-            session.add_message("user", msg.content)
             session.add_message(
                 "assistant", final_content, tools_used=tools_used if tools_used else None
             )

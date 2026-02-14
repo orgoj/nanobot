@@ -27,7 +27,20 @@ def jsonl_serializer(record: dict[str, Any]) -> str:
         if key not in ["channel", "user_id", "chat_id", "metadata"]:
             log_record[key] = value
 
-    return json.dumps(log_record, ensure_ascii=False) + "\n"
+    try:
+        return json.dumps(log_record, ensure_ascii=False, default=str) + "\n"
+    except Exception:
+        # Fallback if even default=str fails
+        return (
+            json.dumps(
+                {
+                    "timestamp": log_record["timestamp"],
+                    "level": "ERROR",
+                    "message": "Log serialization failed",
+                }
+            )
+            + "\n"
+        )
 
 
 def setup_logging(config: Config):
