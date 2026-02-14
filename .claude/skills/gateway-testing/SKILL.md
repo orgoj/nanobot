@@ -16,6 +16,14 @@ Tento skill slouží k řízenému testování nanobota v režimu gateway (např
 5. **Analyze**: Zkontroluj logy na chyby a využití modelů (chat vs task).
 
 ## Scripts
+
+### Important: Script Portability
+All scripts in this skill MUST use relative paths resolved from skill root:
+- ✅ GOOD: `scripts/start.sh` (path from skill directory)
+- ❌ BAD: `../scripts/start.sh` (path from parent directory)
+- ALWAYS verify paths work from skill directory
+
+### Script Details
 - **`scripts/start.sh`**: Spustí nanobota v tmux session `nanobot-gateway`.
 - **`scripts/stop.sh`**: Ukončí nanobot gateway session.
 
