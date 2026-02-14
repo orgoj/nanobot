@@ -96,7 +96,7 @@ pip install nanobot-ai
 ## 🚀 Quick Start
 
 > [!TIP]
-> Set your API key in `~/.nanobot/config.json`.
+> Set your API key in `~/.nanobot/config.yaml`.
 > Get API keys: [OpenRouter](https://openrouter.ai/keys) (Global) · [Brave Search](https://brave.com/search/api/) (optional, for web search)
 
 **1. Initialize**
@@ -105,22 +105,22 @@ pip install nanobot-ai
 nanobot onboard
 ```
 
-**2. Configure** (`~/.nanobot/config.json`)
+**2. Configure** (`~/.nanobot/config.yaml`)
+
+> [!TIP]
+> Use YAML format! Clean syntax, native comments, easy to grep.
+> Copy `config.example.yaml` from the repo.
 
 For OpenRouter - recommended for global users:
-```json
-{
-  "providers": {
-    "openrouter": {
-      "apiKey": "sk-or-v1-xxx"
-    }
-  },
-  "agents": {
-    "defaults": {
-      "model": "anthropic/claude-opus-4-5"
-    }
-  }
-}
+```yaml
+# OpenRouter - recommended
+providers:
+  openrouter:
+    api_key: sk-or-v1-xxx
+
+agents:
+  defaults:
+    model: anthropic/claude-opus-4-5
 ```
 
 **3. Chat**
@@ -141,7 +141,7 @@ Run nanobot with your own local models using vLLM or any OpenAI-compatible serve
 vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
 ```
 
-**2. Configure** (`~/.nanobot/config.json`)
+**2. Configure** (`~/.nanobot/config.yaml`)
 
 ```json
 {
@@ -231,7 +231,7 @@ Simply send this message to nanobot (replace `xxx@xxx` with your real email):
 Read https://raw.githubusercontent.com/HKUDS/MoChat/refs/heads/main/skills/nanobot/skill.md and register on MoChat. My Email account is xxx@xxx Bind me as your owner and DM me on MoChat.
 ```
 
-nanobot will automatically register, configure `~/.nanobot/config.json`, and connect to Mochat.
+nanobot will automatically register, configure `~/.nanobot/config.yaml`, and connect to Mochat.
 
 **2. Restart gateway**
 
@@ -246,27 +246,23 @@ That's it — nanobot handles the rest!
 <details>
 <summary>Manual configuration (advanced)</summary>
 
-If you prefer to configure manually, add the following to `~/.nanobot/config.json`:
+If you prefer to configure manually, add the following to `~/.nanobot/config.yaml`:
 
 > Keep `claw_token` private. It should only be sent in `X-Claw-Token` header to your Mochat API endpoint.
 
-```json
-{
-  "channels": {
-    "mochat": {
-      "enabled": true,
-      "base_url": "https://mochat.io",
-      "socket_url": "https://mochat.io",
-      "socket_path": "/socket.io",
-      "claw_token": "claw_xxx",
-      "agent_user_id": "6982abcdef",
-      "sessions": ["*"],
-      "panels": ["*"],
-      "reply_delay_mode": "non-mention",
-      "reply_delay_ms": 120000
-    }
-  }
-}
+```yaml
+channels:
+  mochat:
+    enabled: true
+    base_url: https://mochat.io
+    socket_url: https://mochat.io
+    socket_path: /socket.io
+    claw_token: claw_xxx
+    agent_user_id: "6982abcdef"
+    sessions: ["*"]
+    panels: ["*"]
+    reply_delay_mode: non-mention
+    reply_delay_ms: 120000
 ```
 
 
@@ -588,7 +584,7 @@ Simply send the command above to your nanobot (via CLI or any chat channel), and
 
 ## ⚙️ Configuration
 
-Config file: `~/.nanobot/config.json`
+Config file: `~/.nanobot/config.yaml`
 
 ### Providers
 
@@ -715,7 +711,7 @@ docker build -t nanobot .
 docker run -v ~/.nanobot:/root/.nanobot --rm nanobot onboard
 
 # Edit config on host to add API keys
-vim ~/.nanobot/config.json
+vim ~/.nanobot/config.yaml
 
 # Run gateway (connects to enabled channels, e.g. Telegram/Discord/Mochat)
 docker run -v ~/.nanobot:/root/.nanobot -p 18790:18790 nanobot gateway

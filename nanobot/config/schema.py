@@ -176,14 +176,40 @@ class ChannelsConfig(BaseModel):
     qq: QQConfig = Field(default_factory=QQConfig)
 
 
+class MainAgentConfig(BaseModel):
+    """Configuration for the main (chat) agent."""
+
+    model: str | None = None  # Defaults to agents.defaults.chat_model or model
+    temperature: float = 0.7
+    max_tokens: int = 8192
+    max_tool_iterations: int = 20
+    memory_window: int = 50
+    # Memory consolidation settings
+    consolidation_threshold: float = 0.8  # Trigger at 80% of memory_window
+    consolidation_keep_ratio: float = 0.5  # Keep 50% after consolidation
+
+
+class TaskAgentConfig(BaseModel):
+    """Configuration for task (subagent) workers."""
+
+    model: str | None = None  # Defaults to agents.defaults.task_model or model
+    temperature: float = 0.7
+    max_tokens: int = 8192
+    max_iterations: int = 30  # Longer iteration limit for complex tasks
+    max_completed_tasks: int = 100  # Registry cleanup threshold
+
+
 class AgentDefaults(BaseModel):
     """Default agent configuration."""
 
     workspace: str = "~/.nanobot/workspace"
     model: str = "anthropic/claude-opus-4-5"
+    chat_model: str | None = None  # Fast model for chat/responsiveness
+    task_model: str | None = None  # Powerful model for subagent tasks
     max_tokens: int = 8192
     temperature: float = 0.7
     max_tool_iterations: int = 20
+    task_max_iterations: int = 30  # Max iterations for subagents
     memory_window: int = 50
 
 
@@ -191,6 +217,8 @@ class AgentsConfig(BaseModel):
     """Agent configuration."""
 
     defaults: AgentDefaults = Field(default_factory=AgentDefaults)
+    main: MainAgentConfig = Field(default_factory=MainAgentConfig)
+    task: TaskAgentConfig = Field(default_factory=TaskAgentConfig)
 
 
 class ProviderConfig(BaseModel):

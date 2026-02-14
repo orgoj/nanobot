@@ -22,13 +22,13 @@ We aim to respond to security reports within 48 hours.
 
 ```bash
 # ✅ Good: Store in config file with restricted permissions
-chmod 600 ~/.nanobot/config.json
+chmod 600 ~/.nanobot/config.yaml
 
 # ❌ Bad: Hardcoding keys in code or committing them
 ```
 
 **Recommendations:**
-- Store API keys in `~/.nanobot/config.json` with file permissions set to `0600`
+- Store API keys in `~/.nanobot/config.yaml` with file permissions set to `0600`
 - Consider using environment variables for sensitive keys
 - Use OS keyring/credential manager for production deployments
 - Rotate API keys regularly
@@ -145,7 +145,7 @@ For production use:
 3. **Set Proper Permissions**
    ```bash
    chmod 700 ~/.nanobot
-   chmod 600 ~/.nanobot/config.json
+   chmod 600 ~/.nanobot/config.yaml
    chmod 700 ~/.nanobot/whatsapp-auth
    ```
 

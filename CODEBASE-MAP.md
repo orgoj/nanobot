@@ -18,7 +18,7 @@ nanobot is a minimalist, event-driven agent framework. It routes messages from v
 
 ## Entry Points & Config
 - `nanobot.cli.commands:app` - Main CLI entry point
-- `~/.nanobot/config.json` - User configuration
+- `~/.nanobot/config.yaml` - User configuration (YAML format)
 - `~/.nanobot/logs/nanobot.jsonl` - Structured JSONL logs
 - `~/.nanobot/workspace/` - Agent's local storage
 

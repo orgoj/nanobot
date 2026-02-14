@@ -17,7 +17,13 @@ from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTo
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
-from nanobot.agent.tools.spawn import SpawnTool
+from nanobot.agent.tools.subagent import (
+    SpawnTool,
+    SubagentCancelTool,
+    SubagentHistoryTool,
+    SubagentMessageTool,
+    SubagentStatusTool,
+)
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.agent.tools.zai_web import ZaiWebFetchTool, ZaiWebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
@@ -48,10 +54,10 @@ class AgentLoop:
         provider: LLMProvider,
         workspace: Path,
         model: str | None = None,
-        max_iterations: int = 20,
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        memory_window: int = 50,
+        max_iterations: int | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        memory_window: int | None = None,
         brave_api_key: str | None = None,
         exec_config: ExecToolConfig | None = None,
         cron_service: CronService | None = None,
@@ -65,11 +71,32 @@ class AgentLoop:
         self.provider = provider
         self.workspace = workspace
         self.config = config or Config()
-        self.model = model or self.config.agents.defaults.model
-        self.max_iterations = max_iterations
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.memory_window = memory_window
+
+        # Main agent configuration (with fallbacks)
+        main_cfg = self.config.agents.main
+        self.chat_model = (
+            main_cfg.model
+            or self.config.agents.defaults.chat_model
+            or self.config.agents.defaults.model
+        )
+        self.model = model or self.chat_model
+
+        # Use passed values if provided, otherwise use config.agents.main, otherwise signature defaults
+        self.temperature = temperature if temperature is not None else main_cfg.temperature
+        self.max_tokens = max_tokens if max_tokens is not None else main_cfg.max_tokens
+        self.max_iterations = (
+            max_iterations if max_iterations is not None else main_cfg.max_tool_iterations
+        )
+        self.memory_window = memory_window if memory_window is not None else main_cfg.memory_window
+
+        # Task agent configuration
+        task_cfg = self.config.agents.task
+        self.task_model = (
+            task_cfg.model
+            or self.config.agents.defaults.task_model
+            or self.config.agents.defaults.model
+        )
+
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
@@ -82,12 +109,14 @@ class AgentLoop:
             provider=provider,
             workspace=workspace,
             bus=bus,
-            model=self.model,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
+            model=self.task_model,
+            temperature=task_cfg.temperature,
+            max_tokens=task_cfg.max_tokens,
             brave_api_key=brave_api_key,
             exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
+            max_iterations=task_cfg.max_iterations,
+            max_completed_tasks=task_cfg.max_completed_tasks,
         )
 
         self._running = False
@@ -138,9 +167,13 @@ class AgentLoop:
         message_tool = MessageTool(send_callback=self.bus.publish_outbound)
         self.tools.register(message_tool)
 
-        # Spawn tool (for subagents)
+        # Subagent orchestration tools
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
+        self.tools.register(SubagentStatusTool(manager=self.subagents))
+        self.tools.register(SubagentMessageTool(manager=self.subagents))
+        self.tools.register(SubagentHistoryTool(manager=self.subagents))
+        self.tools.register(SubagentCancelTool(manager=self.subagents))
 
         # Cron tool (for scheduling)
         if self.cron_service:
@@ -313,12 +346,17 @@ class AgentLoop:
             session.add_message("user", msg.content)
 
             self._set_tool_context(msg.channel, msg.chat_id)
+
+            # Build subagent awareness summary
+            subagent_summary = self._build_subagent_summary()
+
             initial_messages = self.context.build_messages(
                 history=session.get_history(max_messages=self.memory_window),
                 current_message=msg.content,
                 media=msg.media if msg.media else None,
                 channel=msg.channel,
                 chat_id=msg.chat_id,
+                subagent_summary=subagent_summary,
             )
             final_content, tools_used = await self._run_agent_loop(initial_messages)
 
@@ -474,6 +512,25 @@ Respond with ONLY valid JSON, no markdown fences."""
             )
         except Exception as e:
             logger.error(f"Memory consolidation failed: {e}")
+
+    def _build_subagent_summary(self) -> str | None:
+        """Build a concise summary of active background subagents."""
+        active = self.subagents.list_active()
+        if not active:
+            return None
+
+        lines = [f"You have {len(active)} active background subagent(s):"]
+        for s in active:
+            from datetime import datetime
+
+            elapsed = (datetime.now() - s.start_time).total_seconds()
+            lines.append(f"- [{s.task_id}] {s.label} (running for {int(elapsed)}s)")
+            lines.append(f"  Task: {s.task[:80]}...")
+
+        lines.append(
+            "\nYou can monitor them with subagent_status, send guidance with subagent_message, or inspect their progress with subagent_history."
+        )
+        return "\n".join(lines)
 
     async def process_direct(
         self,

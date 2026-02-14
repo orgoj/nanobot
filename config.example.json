@@ -1,0 +1,295 @@
+{
+  // ---------------------------------------------------------------------------
+  // AGENT SETTINGS
+  // ---------------------------------------------------------------------------
+  "agents": {
+    "defaults": {
+      // Working directory for the agent (downloaded files, tool outputs, temporary files)
+      "workspace": "~/.nanobot/workspace",
+
+      // Default LLM model using LiteLLM format: provider/model_name
+      // Examples: anthropic/claude-3-5-sonnet, openai/gpt-4o, openrouter/anthropic/claude-3.5-sonnet
+      "model": "anthropic/claude-3-5-sonnet",
+
+      // Maximum tokens for a SINGLE model response. This is NOT the session limit.
+      // Higher values allow for longer code generation and detailed explanations.
+      "max_tokens": 8192,
+
+      // Controls randomness: 0.0 is deterministic, 1.0+ is more creative/random.
+      "temperature": 0.7,
+
+      // Safety limit for tool calls. If an agent gets stuck in a loop, it will stop after these many iterations.
+      "max_tool_iterations": 20,
+
+      // Number of recent message turns to keep in the immediate LLM context window.
+      "memory_window": 50,
+
+      // Maximum iterations allowed for sub-agents (when using multi-agent features).
+      "subagent_max_iterations": 25,
+
+      // A message to be automatically processed by the agent when it starts.
+      "startup_prompt": null,
+
+      // Where to send the startup_prompt output (e.g., "cli:direct").
+      "startup_target": "cli:direct",
+
+      // If true, the agent performs a proactive status check on start.
+      "heartbeat_on_start": false,
+      "heartbeat_target": "cli:direct",
+
+      // If true, the agent sends "thinking" chunks and intermediate tool outputs to the user in real-time.
+      "stream_intermediate_responses": false,
+
+      "features": {
+        // Multi-agent orchestration: Allows the main agent to delegate tasks to specialized models.
+        "multi_agent": false,
+        // If enabled, the agent will strictly follow journaling requirements for all activities.
+        "journaling": false
+      }
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // SMART ROUTING
+  // Automatically selects the most cost-effective model based on query complexity.
+  // ---------------------------------------------------------------------------
+  "routing": {
+    "enabled": false,
+    "tiers": {
+      // tier models: model = primary, secondary_model = fallback if primary fails.
+      "simple": {
+        "model": "deepseek/deepseek-chat-v3-0324",
+        "cost_per_mtok": 0.27,
+        "secondary_model": "deepseek/deepseek-chat-v3.1"
+      },
+      "medium": {
+        "model": "openai/gpt-4.1-mini",
+        "cost_per_mtok": 0.40,
+        "secondary_model": "openai/gpt-4o-mini"
+      },
+      "complex": {
+        "model": "anthropic/claude-sonnet-4.5",
+        "cost_per_mtok": 3.0,
+        "secondary_model": "anthropic/claude-sonnet-4"
+      },
+      "reasoning": {
+        "model": "openai/o3",
+        "cost_per_mtok": 2.0,
+        "secondary_model": "openai/gpt-4o"
+      },
+      "coding": {
+        "model": "moonshotai/kimi-k2.5",
+        "cost_per_mtok": 0.45,
+        "secondary_model": "anthropic/claude-sonnet-4"
+      }
+    },
+    // Threshold for the local classifier (fastest). If confidence is lower, LLM classifier is used.
+    "client_classifier": {
+      "min_confidence": 0.85
+    },
+    // The model used to decide which tier to use when the local classifier is uncertain.
+    "llm_classifier": {
+      "model": "gpt-4o-mini",
+      "timeout_ms": 500
+    },
+    "sticky": {
+      // Number of messages to stick to a higher tier before considering a downgrade.
+      "context_window": 5,
+      // Confidence required to downgrade from a complex tier back to a simple one.
+      "downgrade_confidence": 0.9
+    },
+    "auto_calibration": {
+      "enabled": true,
+      "interval": "24h" // How often to re-run calibration based on actual usage patterns.
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // TURBO MEMORY SYSTEM
+  // A graph-based memory system using SQLite for persistent storage.
+  // ---------------------------------------------------------------------------
+  "memory": {
+    "enabled": true,
+    // Database location relative to the .nanobot data directory.
+    "db_path": "memory/memory.db",
+
+    "background": {
+      // Runs maintenance tasks (indexing, pruning) in a background thread.
+      "enabled": true,
+      "interval_seconds": 60
+    },
+    "embedding": {
+      // "local": runs on CPU using fastembed (free, private).
+      // "openai": calls OpenAI API (requires API key, better quality).
+      "provider": "local",
+      // The local model used by fastembed. Downloaded automatically on first run.
+      "local_model": "BAAI/bge-small-en-v1.5",
+      "api_model": "qwen/qwen3-embedding-0.6b"
+    },
+    "extraction": {
+      "enabled": true,
+      "provider": "gliner2", // Entity extraction model.
+      "gliner2_model": "fastino/gliner2-base-v1"
+    },
+    "learning": {
+      // If true, the agent extracts and remembers user preferences and facts automatically.
+      "enabled": true,
+      "max_learnings": 200
+    },
+    "session_compaction": {
+      // Automatically summarizes old parts of long conversations to save context tokens.
+      "enabled": true,
+      "mode": "summary", // "summary" (summarizes) or "truncate" (deletes oldest)
+      "threshold_percent": 0.8, // Trigger compaction when context is 80% full.
+      "target_tokens": 3000 // Target tokens after compaction.
+    },
+    "privacy": {
+      "auto_redact_pii": true, // Attempt to remove Personal Identifiable Info from memory.
+      "auto_redact_credentials": true // Automatically redact passwords/keys from memory.
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // TOOLS CONFIGURATION
+  // ---------------------------------------------------------------------------
+  "tools": {
+    // SECURITY: If true, the agent can only read/write files within its workspace directory.
+    "restrict_to_workspace": false,
+
+    // Allows the agent to modify its own code or system files (DANGEROUS).
+    // Requires setting 'allowed_paths' to grant access to specific folders.
+    "evolutionary": false,
+    "allowed_paths": [],
+    "protected_paths": ["~/.nanobot/config.json"],
+
+    "web": {
+      "search": {
+        "provider": "brave", // Supported: brave, google, duckduckgo, zai
+        "api_key": "",       // Required for Brave/Google
+        "max_results": 5
+      },
+      "fetch": {
+        "provider": "readability", // Supported: readability, playwright, zai
+        "max_chars": 50000 // Max characters to extract from a single webpage.
+      }
+    },
+    "exec": {
+      "timeout": 60 // Max seconds for a single shell command to run.
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // LLM PROVIDERS
+  // API keys and custom base URLs.
+  // ---------------------------------------------------------------------------
+  "providers": {
+    "anthropic": { "api_key": "sk-ant-...", "api_base": null },
+    "openai": { "api_key": "sk-...", "api_base": null },
+    "openrouter": { "api_key": "sk-or-...", "api_base": null },
+    "deepseek": { "api_key": "sk-..." },
+    "groq": { "api_key": "gsk_..." },
+    "gemini": { "api_key": "" },
+    "moonshot": { "api_key": "" },
+    "zhipu": { "api_key": "" },
+    "dashscope": { "api_key": "" },
+    // Local LLM integration (e.g., via Ollama or vLLM server).
+    "vllm": { "api_key": "dummy", "api_base": "http://localhost:8000/v1" }
+  },
+
+  // ---------------------------------------------------------------------------
+  // CHAT CHANNELS (GATEWAY)
+  // Enable these to interact with nanobot via external messaging apps.
+  // ---------------------------------------------------------------------------
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "token": "YOUR_BOT_TOKEN",
+      "allow_from": [], // List of allowed Telegram user IDs or usernames.
+      "proxy": null      // Optional: "socks5://127.0.0.1:1080"
+    },
+    "discord": {
+      "enabled": false,
+      "token": "YOUR_BOT_TOKEN",
+      "allow_from": [] // List of allowed Discord user IDs.
+    },
+    "whatsapp": {
+      "enabled": false,
+      "bridge_url": "ws://localhost:3001", // URL of the WhatsApp-Node bridge.
+      "allow_from": []
+    },
+    "slack": {
+      "enabled": false,
+      "mode": "socket", // Currently only "socket" (Socket Mode) is supported.
+      "bot_token": "xoxb-...",
+      "app_token": "xapp-..."
+    },
+    "feishu": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": ""
+    },
+    "dingtalk": {
+      "enabled": false,
+      "client_id": "",
+      "client_secret": ""
+    },
+    "email": {
+      "enabled": false,
+      "imap_host": "imap.gmail.com",
+      "imap_username": "user@gmail.com",
+      "imap_password": "app-password", // Use App Password for Gmail.
+      "smtp_host": "smtp.gmail.com",
+      "from_address": "user@gmail.com"
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  // SECURITY & SCANNING
+  // Automated protection against malicious tool use or insecure skills.
+  // ---------------------------------------------------------------------------
+  "security": {
+    "enabled": true,
+    // If strict_mode is true, any suspicious activity immediately blocks the agent.
+    "strict_mode": false,
+    "block_on_critical": true,
+    "scan_on_install": true,
+    // Explicit list of shell commands the agent is allowed to execute.
+    "allowed_shell_commands": ["git", "npm", "node", "python", "pip", "pnpm", "yarn"]
+  },
+
+  // ---------------------------------------------------------------------------
+  // WORK LOGS
+  // Persistent record of agent activities, tool calls, and internal decisions.
+  // Stores data in a local SQLite database (typically ~/.nanobot/logs/work_logs.db).
+  // Use 'nanobot explain' in CLI to view these logs.
+  // ---------------------------------------------------------------------------
+  "work_logs": {
+    "enabled": true,
+    // How many days to keep the history before automatic cleanup.
+    "retention_days": 30,
+    // Record every tool execution with arguments and results.
+    "log_tool_calls": true,
+    // Record why a specific model tier was chosen during routing.
+    "log_routing_decisions": true
+  },
+
+  // ---------------------------------------------------------------------------
+  // SYSTEM & NETWORK
+  // ---------------------------------------------------------------------------
+  "gateway": {
+    // The address the gateway server binds to. Use "0.0.0.0" for Docker/Public access.
+    "host": "0.0.0.0",
+    "port": 18790
+  },
+  "heartbeat": {
+    // Interval in seconds for the background heartbeat service.
+    "interval_s": 1800 // 30 minutes
+  },
+  "logging": {
+    // Standard application logs (errors, info).
+    "fileLoggingEnabled": false,
+    "fileLogPath": null, // null = default (~/.nanobot/logs/nanobot.log)
+    "logFullMessages": false, // If true, logs the entire raw JSON of LLM requests/responses.
+    "logFullToolArgs": false
+  }
+}

@@ -156,6 +156,7 @@ Always be helpful, accurate, and concise. When using tools, think step by step: 
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
+        subagent_summary: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Build the complete message list for an LLM call.
@@ -167,6 +168,7 @@ Always be helpful, accurate, and concise. When using tools, think step by step: 
             media: Optional list of local file paths for images/media.
             channel: Current channel (telegram, feishu, etc.).
             chat_id: Current chat/user ID.
+            subagent_summary: Optional summary of active background subagents.
 
         Returns:
             List of messages including system prompt.
@@ -177,6 +179,11 @@ Always be helpful, accurate, and concise. When using tools, think step by step: 
         system_prompt = self.build_system_prompt(skill_names)
         if channel and chat_id:
             system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
+
+        # Inject active subagent awareness
+        if subagent_summary:
+            system_prompt += f"\n\n## Background Subagents\n{subagent_summary}"
+
         messages.append({"role": "system", "content": system_prompt})
 
         # History

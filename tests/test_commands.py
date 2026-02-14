@@ -24,7 +24,7 @@ def mock_paths():
             shutil.rmtree(base_dir)
         base_dir.mkdir()
 
-        config_file = base_dir / "config.json"
+        config_file = base_dir / "config.yaml"
         workspace_dir = base_dir / "workspace"
 
         mock_cp.return_value = config_file

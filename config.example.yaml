@@ -1,0 +1,272 @@
+# ==============================================================================
+# NANOBOT CONFIGURATION
+# ==============================================================================
+# This is the example configuration file in YAML format.
+# Copy to ~/.nanobot/config.yaml and customize.
+#
+# YAML benefits:
+# - Native comments (this!)
+# - Clean syntax (no quotes/commas)
+# - Multi-line strings
+# - Easy to read and grep
+#
+# See CLAUDE.md and README.md for detailed setup instructions.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# AGENT SETTINGS
+# ------------------------------------------------------------------------------
+agents:
+  # Default settings (baseline for everything)
+  defaults:
+    workspace: ~/.nanobot/workspace
+    
+    # Default LLM model (LiteLLM format: provider/model_name)
+    # Examples:
+    #   - anthropic/claude-opus-4-5
+    #   - anthropic/claude-sonnet-4
+    #   - openai/gpt-4o
+    #   - openrouter/anthropic/claude-opus-4-5
+    #   - deepseek/deepseek-chat
+    model: anthropic/claude-opus-4-5
+    
+    # Tiered models (optional overrides)
+    chat_model: null  # Fast model for chat (null = use 'model')
+    task_model: null  # Powerful model for subagents (null = use 'model')
+    
+    max_tokens: 8192
+    temperature: 0.7
+    max_tool_iterations: 20
+    task_max_iterations: 30
+    memory_window: 50
+  
+  # Main agent (chat/interactive) - fine-tuned settings
+  main:
+    model: null  # null = use defaults.chat_model or defaults.model
+    temperature: 0.7
+    max_tokens: 8192
+    max_tool_iterations: 20
+    memory_window: 50
+    
+    # Memory consolidation
+    consolidation_threshold: 0.8  # Trigger at 80% of memory_window
+    consolidation_keep_ratio: 0.5  # Keep 50% newest messages
+  
+  # Task agent (subagents/background workers)
+  task:
+    model: null  # null = use defaults.task_model or defaults.model
+    temperature: 0.7
+    max_tokens: 8192
+    max_iterations: 30  # Higher for complex workflows
+    max_completed_tasks: 100  # Registry cleanup threshold
+
+# ------------------------------------------------------------------------------
+# TOOLS
+# ------------------------------------------------------------------------------
+tools:
+  # If true, restrict all file/shell access to workspace only
+  restrict_to_workspace: false
+  
+  web:
+    search:
+      provider: brave  # brave or zai
+      api_key: ""
+      max_results: 5
+      # ZAI provider (alternative)
+      zai_api_key: ""
+      zai_base_url: null
+    
+    fetch:
+      provider: readability  # readability or zai
+      max_chars: 50000
+      # ZAI provider (alternative)
+      zai_api_key: ""
+      zai_base_url: null
+  
+  exec:
+    timeout: 60  # Max seconds for shell commands
+
+# ------------------------------------------------------------------------------
+# LLM PROVIDERS
+# Add API keys for the providers you want to use.
+# ------------------------------------------------------------------------------
+providers:
+  anthropic:
+    api_key: ""
+    api_base: null
+  
+  openai:
+    api_key: ""
+    api_base: null
+  
+  # OpenRouter - Gateway to all models (RECOMMENDED)
+  openrouter:
+    api_key: ""  # Get from https://openrouter.ai/keys
+    api_base: null
+  
+  deepseek:
+    api_key: ""
+    api_base: null
+  
+  groq:
+    api_key: ""
+    api_base: null
+  
+  gemini:
+    api_key: ""
+    api_base: null
+  
+  moonshot:
+    api_key: ""
+    api_base: null
+  
+  minimax:
+    api_key: ""
+    api_base: null
+  
+  zhipu:
+    api_key: ""
+    api_base: null
+  
+  dashscope:
+    api_key: ""
+    api_base: null
+  
+  aihubmix:
+    api_key: ""
+    api_base: null
+    extra_headers: {}
+      # APP-Code: your-app-code  # For some AiHubMix endpoints
+  
+  # Local LLM (vLLM, Ollama, etc.)
+  vllm:
+    api_key: dummy  # Any non-empty string
+    api_base: http://localhost:8000/v1
+  
+  # Custom OpenAI-compatible endpoint
+  custom:
+    api_key: ""
+    api_base: null
+
+# ------------------------------------------------------------------------------
+# CHAT CHANNELS
+# ------------------------------------------------------------------------------
+channels:
+  telegram:
+    enabled: false
+    token: ""
+    allow_from: []
+    proxy: null
+  
+  discord:
+    enabled: false
+    token: ""
+    allow_from: []
+    gateway_url: wss://gateway.discord.gg/?v=10&encoding=json
+    intents: 37377
+  
+  whatsapp:
+    enabled: false
+    bridge_url: ws://localhost:3001
+    bridge_token: ""
+    allow_from: []
+  
+  slack:
+    enabled: false
+    mode: socket
+    bot_token: ""
+    app_token: ""
+    user_token_read_only: true
+    group_policy: mention
+    group_allow_from: []
+    dm:
+      enabled: true
+      policy: open
+      allow_from: []
+  
+  feishu:
+    enabled: false
+    app_id: ""
+    app_secret: ""
+    encrypt_key: ""
+    verification_token: ""
+    allow_from: []
+  
+  dingtalk:
+    enabled: false
+    client_id: ""
+    client_secret: ""
+    allow_from: []
+  
+  email:
+    enabled: false
+    consent_granted: false  # REQUIRED for mailbox access
+    # IMAP (receive)
+    imap_host: imap.gmail.com
+    imap_port: 993
+    imap_username: ""
+    imap_password: ""
+    imap_mailbox: INBOX
+    imap_use_ssl: true
+    # SMTP (send)
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    smtp_username: ""
+    smtp_password: ""
+    smtp_use_tls: true
+    smtp_use_ssl: false
+    from_address: ""
+    # Behavior
+    auto_reply_enabled: true
+    poll_interval_seconds: 30
+    mark_seen: true
+    max_body_chars: 12000
+    subject_prefix: "Re: "
+    allow_from: []
+  
+  mochat:
+    enabled: false
+    base_url: https://mochat.io
+    socket_url: ""
+    socket_path: /socket.io
+    socket_disable_msgpack: false
+    socket_reconnect_delay_ms: 1000
+    socket_max_reconnect_delay_ms: 10000
+    socket_connect_timeout_ms: 10000
+    refresh_interval_ms: 30000
+    watch_timeout_ms: 25000
+    watch_limit: 100
+    retry_delay_ms: 500
+    max_retry_attempts: 0
+    claw_token: ""
+    agent_user_id: ""
+    sessions: []
+    panels: []
+    allow_from: []
+    mention:
+      require_in_groups: false
+    groups: {}
+    reply_delay_mode: non-mention
+    reply_delay_ms: 120000
+  
+  qq:
+    enabled: false
+    app_id: ""
+    secret: ""
+    allow_from: []
+
+# ------------------------------------------------------------------------------
+# GATEWAY
+# ------------------------------------------------------------------------------
+gateway:
+  host: 0.0.0.0
+  port: 18790
+
+# ------------------------------------------------------------------------------
+# LOGGING
+# ------------------------------------------------------------------------------
+logging:
+  enabled: true
+  level: INFO
+  file_path: ~/.nanobot/logs/nanobot.jsonl
+  stderr_level: ERROR
