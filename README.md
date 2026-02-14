@@ -36,6 +36,10 @@
 
 🪶 **Ultra-Lightweight**: Just ~4,000 lines of core agent code — 99% smaller than Clawdbot.
 
+🤖 **Interactive Subagent Orchestration**: Spawn background agents, monitor their progress, and inject real-time guidance via a mailbox pattern.
+
+🚀 **Tiered Model Support**: Use fast models (like Claude Sonnet) for chat and powerful models (like Claude Opus or GLM-5) for complex subagent tasks.
+
 🔬 **Research-Ready**: Clean, readable code that's easy to understand, modify, and extend for research.
 
 ⚡️ **Lightning Fast**: Minimal footprint means faster startup, lower resource usage, and quicker iterations.
@@ -586,6 +590,19 @@ Simply send the command above to your nanobot (via CLI or any chat channel), and
 
 Config file: `~/.nanobot/config.yaml`
 
+### Tiered Models
+
+nanobot supports different models for user interaction and background tasks. Configure them in `agents.defaults`:
+
+```yaml
+agents:
+  defaults:
+    model: anthropic/claude-opus-4-5
+    chat_model: anthropic/claude-sonnet-4  # Fast, for user chat
+    task_model: anthropic/claude-opus-4-5  # Powerful, for subagents
+    task_max_iterations: 50
+```
+
 ### Providers
 
 > [!TIP]
@@ -730,8 +747,10 @@ nanobot/
 │   ├── context.py  #    Prompt builder
 │   ├── memory.py   #    Persistent memory
 │   ├── skills.py   #    Skills loader
-│   ├── subagent.py #    Background task execution
-│   └── tools/      #    Built-in tools (incl. spawn)
+│   ├── subagent.py #    Subagent Orchestrator (Interactive, Tiered Models)
+│   └── tools/      #    Built-in tools
+│       ├── subagent.py # Orchestration tools (spawn, status, message, etc.)
+│       └── ...
 ├── skills/         # 🎯 Bundled skills (github, weather, tmux...)
 ├── channels/       # 📱 Chat channel integrations
 ├── bus/            # 🚌 Message routing

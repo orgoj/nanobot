@@ -16,6 +16,7 @@ from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTo
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.tools.zai_web import ZaiWebFetchTool, ZaiWebSearchTool
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
@@ -65,6 +66,7 @@ class SubagentManager:
         restrict_to_workspace: bool = False,
         max_iterations: int = 30,
         max_completed_tasks: int = 100,
+        config: Any | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
 
@@ -79,6 +81,7 @@ class SubagentManager:
         self.restrict_to_workspace = restrict_to_workspace
         self.max_iterations = max_iterations
         self.max_completed_tasks = max_completed_tasks
+        self.config = config
         self._registry: dict[str, SubagentState] = {}
 
     async def spawn(
@@ -170,8 +173,36 @@ class SubagentManager:
                         restrict_to_workspace=self.restrict_to_workspace,
                     )
                 )
-                tools.register(WebSearchTool(api_key=self.brave_api_key))
-                tools.register(WebFetchTool())
+                # Web tools
+                if self.config:
+                    search_config = self.config.tools.web.search
+                    if search_config.provider == "zai":
+                        tools.register(
+                            ZaiWebSearchTool(
+                                api_key=self.config.resolve_value(
+                                    search_config.zai_api_key or search_config.api_key
+                                ),
+                                base_url=search_config.zai_base_url,
+                            )
+                        )
+                    else:
+                        tools.register(WebSearchTool(api_key=self.brave_api_key))
+
+                    fetch_config = self.config.tools.web.fetch
+                    if fetch_config.provider == "zai":
+                        tools.register(
+                            ZaiWebFetchTool(
+                                api_key=self.config.resolve_value(
+                                    fetch_config.zai_api_key or search_config.zai_api_key
+                                ),
+                                base_url=fetch_config.zai_base_url,
+                            )
+                        )
+                    else:
+                        tools.register(WebFetchTool())
+                else:
+                    tools.register(WebSearchTool(api_key=self.brave_api_key))
+                    tools.register(WebFetchTool())
 
                 # Initial messages
                 system_prompt = self._build_subagent_prompt(state)
@@ -199,17 +230,24 @@ class SubagentManager:
                             )
 
                         # 2. Call LLM
+                        logger.debug(f"Subagent [{task_id}] calling LLM ({self.model})...")
                         response = await self.provider.chat(
                             messages=state.messages,
                             tools=tools.get_definitions(),
                             model=self.model,
                             temperature=self.temperature,
                             max_tokens=self.max_tokens,
+                            timeout=120.0,
                         )
+                        logger.debug(f"Subagent [{task_id}] LLM response received")
 
+                        # Add assistant message to history
+                        assistant_msg: dict[str, Any] = {
+                            "role": "assistant",
+                            "content": response.content or "",
+                        }
                         if response.has_tool_calls:
-                            # Add assistant message with tool calls
-                            tool_call_dicts = [
+                            assistant_msg["tool_calls"] = [
                                 {
                                     "id": tc.id,
                                     "type": "function",
@@ -220,15 +258,12 @@ class SubagentManager:
                                 }
                                 for tc in response.tool_calls
                             ]
-                            state.messages.append(
-                                {
-                                    "role": "assistant",
-                                    "content": response.content or "",
-                                    "tool_calls": tool_call_dicts,
-                                    "reasoning_content": response.reasoning_content,
-                                }
-                            )
+                        if response.reasoning_content:
+                            assistant_msg["reasoning_content"] = response.reasoning_content
 
+                        state.messages.append(assistant_msg)
+
+                        if response.has_tool_calls:
                             # Execute tools
                             for tc in response.tool_calls:
                                 logger.debug(f"Subagent [{task_id}] tool: {tc.name}")
@@ -241,11 +276,11 @@ class SubagentManager:
                                         "content": result,
                                     }
                                 )
-                            # Add reflection prompt after tool execution
+                            # Add a prompt to trigger the next step in multi-step tasks
                             state.messages.append(
                                 {
                                     "role": "user",
-                                    "content": "Reflect on the results and decide next steps.",
+                                    "content": "Continue with the next step based on the tool results.",
                                 }
                             )
                         else:

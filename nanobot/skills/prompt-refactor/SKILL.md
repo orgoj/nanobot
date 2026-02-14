@@ -25,6 +25,7 @@ Refactors agent prompts to be simple, accurate, and portable.
 ### Check These
 - Skill files (`skills/*/SKILL.md`)
 - Channel configs (if they contain prompt text)
+- Subagent awareness (main agent loop needs to know about background tasks)
 
 ## Refactor Process
 
@@ -35,8 +36,23 @@ Read all prompt files and identify:
 - Over-complicated memory (vectors, embeddings, databases)
 - Redundant information
 - Non-portable elements (hardcoded paths, specific tools)
+- **Lack of subagent orchestration** (main agent doesn't know it can delegate)
 
-### Step 2: Add Time Awareness
+### Step 2: Add Subagent Orchestration (NEW)
+
+The main agent needs to know it has access to subagents. Add this to the system prompt if missing:
+
+```markdown
+## Subagent Orchestration
+- Use `spawn` to delegate long-running or complex background tasks.
+- Use `subagent_status` to monitor active tasks.
+- Use `subagent_message` to guide running subagents via their mailbox.
+- Use `subagent_history` to inspect subagent thinking and progress.
+```
+
+Ensure the prompt explicitly mentions that subagents report results back asynchronously via the `system` channel.
+
+### Step 3: Add Time Awareness
 
 Add to system prompt:
 
@@ -85,6 +101,17 @@ Remove:
 - Hardcoded paths (use `$WORKSPACE` variable)
 - Agent-specific features (unless critical)
 - System-dependent tools
+
+### Step 6: Tiered Model Awareness (NEW)
+
+Optimize prompts for tiered model architectures:
+1. **Main Agent**: Should focus on user interaction, high-level planning, and delegating heavy lifting to subagents.
+2. **Subagents**: Prompts should be hyper-focused on a single task, skipping broad persona overhead.
+
+Ensure subagent prompts include:
+- Clear exit criteria.
+- Instructions to summarize findings for the supervisor.
+- Awareness of `<SupervisorCorrection>` tags in their history.
 
 ## Output Format
 

@@ -15,6 +15,10 @@ Tento skill slouží k řízenému testování nanobota v režimu gateway (např
 4. **Stop**: Ukonči gateway: `scripts/stop.sh`
 5. **Analyze**: Zkontroluj logy na chyby a využití modelů (chat vs task).
 
+## Scripts
+- **`scripts/start.sh`**: Spustí nanobota v tmux session `nanobot-gateway`.
+- **`scripts/stop.sh`**: Ukončí nanobot gateway session.
+
 ## Logy
 - Strukturované logy: `~/.nanobot/logs/nanobot.jsonl`
 - Výstup konzole: `~/.nanobot/logs/gateway_stdout.log`

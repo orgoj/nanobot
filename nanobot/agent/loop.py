@@ -117,6 +117,7 @@ class AgentLoop:
             restrict_to_workspace=restrict_to_workspace,
             max_iterations=task_cfg.max_iterations,
             max_completed_tasks=task_cfg.max_completed_tasks,
+            config=self.config,
         )
 
         self._running = False
@@ -222,6 +223,7 @@ class AgentLoop:
                     model=self.model,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
+                    timeout=120.0,
                 )
 
                 if response.has_tool_calls:
@@ -249,7 +251,10 @@ class AgentLoop:
                             messages, tool_call.id, tool_call.name, result
                         )
                     messages.append(
-                        {"role": "user", "content": "Reflect on the results and decide next steps."}
+                        {
+                            "role": "user",
+                            "content": "Tool execution finished. Please proceed based on the results.",
+                        }
                     )
                 else:
                     final_content = response.content
@@ -505,6 +510,7 @@ Respond with ONLY valid JSON, no markdown fences."""
                     {"role": "user", "content": prompt},
                 ],
                 model=self.model,
+                timeout=60.0,
             )
             text = (response.content or "").strip()
             if text.startswith("```"):
