@@ -10,6 +10,25 @@
 
 ### Testing Protocols
 
+#### Network-Dependent Tests
+ALL tests requiring API keys or network calls MUST be in `scripts/`:
+- **Fast unit tests**: Go in `tests/` - isolated, no network, always run in CI/CD
+- **Slow integration tests**: Go in `scripts/manual_*.py` - requires keys/network, manual only
+- **CI/CD policy**: ONLY runs `tests/`, never scripts/
+
+**Example**:
+```bash
+# ✅ GOOD - Isolated unit test
+uv run pytest tests/test_zai_unit.py
+
+# ✅ GOOD - Manual integration test (not for CI/CD)
+uv run pytest scripts/manual_zai_integration.py
+
+# ❌ BAD - Test hangs CI/CD pipelines
+uv run pytest tests/test_zai_integration.py
+```
+
+#### Testing Rules
 - **Isolated Testing ONLY**: Only run code changes if they are covered by isolated unit tests that do not touch `~/.nanobot/`.
 - **Use Docker**: All integration testing and runtime behavior checks must be performed inside a Docker container.
 - **NO SECRETS IN OUTPUT**: Never display, print, or log API keys, tokens, or credentials. Use environment variables. If a secret is accidentally leaked in the tool output, it must be reported and immediately redacted.
@@ -112,8 +131,13 @@ uv run pytest tests/test_orchestration.py -v
 
 ## Development Workflow
 
-- **Pre-commit REQUIRED**: Every commit MUST pass `ruff format`, `ruff check`, and `pytest`. 
-- **NO Bypass**: Never use `--no-verify`.
+- **Pre-commit REQUIRED**: Every commit MUST pass `ruff format`, `ruff check`, and `pytest`.
+- **NO Bypass**: Never use `--no-verify` or skip the pre-commit checks.
+- **Mandatory Steps** (in order):
+  1. `uv run ruff format .`
+  2. `uv run ruff check --fix .`
+  3. `uv run pytest`
+  4. Create git commit with message
 - **KISS Principle**: Keep it simple. Prioritize text files over databases. No embeddings/vecdb/SQL in core.
 - **Modular Growth**: Focus on modularity over strict line limits. Core is ~4,200 lines (as of 2026-02-14).
 - **Observability First**: All agent actions must be logged with context for debugging and evolution.
@@ -126,6 +150,22 @@ uv run pytest tests/test_orchestration.py -v
 - **Async Patterns**: Subagents run via `asyncio.create_task`, use `asyncio.Queue` for mailboxes
 - **Error Handling**: Graceful degradation, log failures to `FAILURES.md`
 - **Formatting**: Ported `markdown-it` based Telegram formatter (HTML + Tables)
+
+## Mode Constraints
+
+### PLANNING MODE
+When `[PLANNING MODE ACTIVE]` appears, you are in planning mode:
+- **FORBIDDEN tools**: `write`, `edit` (only `plan`, `read`, `bash` allowed)
+- **Required workflow**:
+  1. Use `plan` tool to create implementation outline
+  2. Get user approval for the plan
+  3. Switch to execution mode
+  4. Then use `write`/`edit` to implement
+- **Consequences of violations**:
+  - File overwrites (not appending)
+  - Lost work
+  - User frustration
+  - Reduced trust in the agent
 
 ## Testing
 
