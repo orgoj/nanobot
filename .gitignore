@@ -19,3 +19,7 @@ __pycache__/
 poetry.lock
 .pytest_cache/
 botpy.log
+instance/
+.dippy
+.pi/
+uv.lock
