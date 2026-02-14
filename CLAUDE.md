@@ -51,15 +51,16 @@ uv run ruff check --fix .
 # Run Tests
 uv run pytest tests/
 
-# Verify Line Count (KISS target: ~4000)
+# Monitor Project Size
 bash core_agent_lines.sh
 ```
 
 ## Development Workflow
 
 - **Pre-commit REQUIRED**: Every commit MUST pass `ruff format`, `ruff check`, and `pytest`. 
-- **NO Bypass**: Never use `PRE_COMMIT_ALLOW_NO_CONFIG=1` or `--no-verify`.
-- **KISS Principle**: Keep it simple. Prioritize text files over databases. No embeddings/vecdb in core.
+- **NO Bypass**: Never use `--no-verify`.
+- **KISS Principle**: Keep it simple. Prioritize text files over databases. No embeddings/vecdb/SQL in core.
+- **Maintainable Growth**: While there is no hard limit on line count, avoid over-engineering. Core logic should remain readable and file-based.
 
 ## Coding Style
 - Follow PEP 8
