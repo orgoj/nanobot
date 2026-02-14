@@ -1,0 +1,57 @@
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from loguru import logger
+
+from nanobot.config.schema import Config
+
+
+def jsonl_serializer(record: dict[str, Any]) -> str:
+    """Serialize log record to JSONL format."""
+    log_record = {
+        "timestamp": record["time"].isoformat(),
+        "level": record["level"].name,
+        "message": record["message"],
+        "module": record["module"],
+        "function": record["function"],
+        "line": record["line"],
+        "channel": record["extra"].get("channel"),
+        "user_id": record["extra"].get("user_id"),
+        "chat_id": record["extra"].get("chat_id"),
+        "metadata": record["extra"].get("metadata", {}),
+    }
+    # Include any other extra fields
+    for key, value in record["extra"].items():
+        if key not in ["channel", "user_id", "chat_id", "metadata"]:
+            log_record[key] = value
+
+    return json.dumps(log_record, ensure_ascii=False) + "\n"
+
+
+def setup_logging(config: Config):
+    """Setup logging to JSONL file and stderr."""
+    logger.remove()
+
+    if not config.logging.enabled:
+        return
+
+    # Stderr handler
+    logger.add(
+        sys.stderr,
+        level=config.logging.stderr_level,
+        format="<red>{level: <8}</red> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    )
+
+    # File handler (JSONL)
+    log_file = Path(config.logging.file_path).expanduser()
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    logger.add(
+        str(log_file),
+        level=config.logging.level,
+        format=jsonl_serializer,
+    )
+
+    logger.info(f"Logging initialized. File: {log_file}")
