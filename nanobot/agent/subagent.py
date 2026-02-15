@@ -66,6 +66,7 @@ class SubagentManager:
         restrict_to_workspace: bool = False,
         max_iterations: int = 30,
         max_completed_tasks: int = 100,
+        llm_timeout: float | None = None,
         config: Any | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
@@ -81,6 +82,20 @@ class SubagentManager:
         self.restrict_to_workspace = restrict_to_workspace
         self.max_iterations = max_iterations
         self.max_completed_tasks = max_completed_tasks
+        # LLM timeout with fallback to config or default 120s
+        self.llm_timeout: float = (
+            llm_timeout
+            if llm_timeout is not None
+            else (
+                float(config.agents.task.llm_timeout)
+                if config and config.agents.task.llm_timeout is not None
+                else (
+                    float(config.agents.defaults.llm_timeout)
+                    if config
+                    else 120.0
+                )
+            )
+        )
         self.config = config
         self._registry: dict[str, SubagentState] = {}
 
@@ -237,7 +252,7 @@ class SubagentManager:
                             model=self.model,
                             temperature=self.temperature,
                             max_tokens=self.max_tokens,
-                            timeout=120.0,
+                            timeout=self.llm_timeout,
                         )
                         logger.debug(f"Subagent [{task_id}] LLM response received")
 
