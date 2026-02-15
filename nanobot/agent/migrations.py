@@ -15,8 +15,8 @@ class MigrationManager:
 
     def __init__(self, workspace: Path, agent_loop):
         self.workspace = workspace
-        # upgrades directory is usually ~/.nanobot/upgrades/
-        self.upgrades_dir = workspace.parent / "upgrades"
+        # upgrades directory is inside the package: nanobot/agent/upgrades/
+        self.upgrades_dir = Path(__file__).parent / "upgrades"
         self.state_file = workspace.parent / ".applied_migrations"
         self.agent = agent_loop
 

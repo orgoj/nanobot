@@ -450,22 +450,15 @@ def gateway(
                     console.print(
                         f"[cyan]Running startup prompt: {config.agents.defaults.startup_prompt}[/cyan]"
                     )
-                    response = await agent.process_direct(
+                    # Note: We don't manually publish the response here anymore
+                    # because process_direct already handles tool execution
+                    # (like the message tool) which delivers the content.
+                    await agent.process_direct(
                         config.agents.defaults.startup_prompt,
                         session_key=f"startup:{target}",
                         channel=channel,
                         chat_id=chat_id,
                     )
-                    if response:
-                        from nanobot.bus.events import OutboundMessage
-
-                        await bus.publish_outbound(
-                            OutboundMessage(
-                                channel=channel,
-                                chat_id=chat_id,
-                                content=response,
-                            )
-                        )
 
                 asyncio.create_task(run_startup())
 
