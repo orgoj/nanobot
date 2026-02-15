@@ -161,10 +161,16 @@ class LiteLLMProvider(LLMProvider):
 
         try:
             response = await acompletion(**kwargs)
+            # Log the response object for debugging when needed
+            # logger.trace(f"LiteLLM raw response: {response}")
             return self._parse_response(response)
         except Exception as e:
             # Return error as content for graceful handling
             logger.error(f"LLM call failed ({model}): {str(e)}")
+            # If it's a validation error, let's try to see what exactly failed
+            if "ValidationError" in str(e):
+                logger.debug(f"Validation error details: {e}")
+
             return LLMResponse(
                 content=f"Error calling LLM: {str(e)}",
                 finish_reason="error",
@@ -173,6 +179,7 @@ class LiteLLMProvider(LLMProvider):
     def _parse_response(self, response: Any) -> LLMResponse:
         """Parse LiteLLM response into our standard format."""
         if not response or not hasattr(response, "choices") or not response.choices:
+            logger.warning(f"Empty or invalid response object: {response}")
             return LLMResponse(
                 content="Error: Empty or invalid response from LLM provider.",
                 finish_reason="error",
@@ -182,15 +189,22 @@ class LiteLLMProvider(LLMProvider):
         message = choice.message
 
         # Handle 'abort' finish reason which can happen with LiteLLM timeouts or specific provider errors
-        finish_reason = choice.finish_reason or "stop"
+        # Use getattr because Pydantic might have failed to populate it if it was an unknown literal
+        finish_reason = getattr(choice, "finish_reason", None) or "stop"
+
         if finish_reason == "abort":
             logger.error(
-                "LLM call was aborted (finish_reason='abort'). This may be a timeout or provider issue."
+                f"LLM call was aborted (finish_reason='abort'). Model: {getattr(response, 'model', 'unknown')}. "
+                f"Usage: {getattr(response, 'usage', 'unknown')}"
             )
-            return LLMResponse(
-                content="Error: LLM call was aborted. The request may have timed out or been rejected by the provider.",
-                finish_reason="error",
-            )
+            # If aborted and no content, mark as error
+            if not message.content and not (hasattr(message, "tool_calls") and message.tool_calls):
+                return LLMResponse(
+                    content="Error: LLM call was aborted by provider (likely timeout or overload).",
+                    finish_reason="error",
+                )
+            # If we have some content despite 'abort', we might want to use it,
+            # but let's be safe and mark it as 'abort' so the caller can decide.
 
         tool_calls = []
         if hasattr(message, "tool_calls") and message.tool_calls:
@@ -213,10 +227,12 @@ class LiteLLMProvider(LLMProvider):
 
         usage = {}
         if hasattr(response, "usage") and response.usage:
+            # LiteLLM usage might be a dict or an object
+            u = response.usage
             usage = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens,
+                "prompt_tokens": getattr(u, "prompt_tokens", 0),
+                "completion_tokens": getattr(u, "completion_tokens", 0),
+                "total_tokens": getattr(u, "total_tokens", 0),
             }
 
         reasoning_content = getattr(message, "reasoning_content", None)
@@ -224,7 +240,7 @@ class LiteLLMProvider(LLMProvider):
         return LLMResponse(
             content=message.content,
             tool_calls=tool_calls,
-            finish_reason=choice.finish_reason or "stop",
+            finish_reason=finish_reason,
             usage=usage,
             reasoning_content=reasoning_content,
         )

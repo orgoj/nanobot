@@ -681,8 +681,19 @@ Respond with ONLY valid JSON, no markdown fences."""
                 timeout=self.llm_timeout,  # Use configured llm_timeout instead of hardcoded 60s
             )
 
+            # Debug log for consolidation response
+            logger.debug(
+                f"Consolidation response: status={response.finish_reason}, content_len={len(response.content or '')}"
+            )
+
             if response.finish_reason == "error":
                 logger.error(f"Memory consolidation failed due to LLM error: {response.content}")
+                return
+
+            if response.finish_reason == "abort":
+                logger.warning(
+                    "Memory consolidation aborted by provider (likely timeout/overload). Skipping."
+                )
                 return
 
             text = (response.content or "").strip()
@@ -698,18 +709,33 @@ Respond with ONLY valid JSON, no markdown fences."""
                     text = text[json_start:]
             elif text.startswith("```"):
                 text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            elif text:
+                logger.warning(
+                    f"No JSON structure found in consolidation response. Raw text preview: {text[:100]!r}"
+                )
+            else:
+                logger.warning(
+                    f"Consolidation response content is empty. finish_reason={response.finish_reason}"
+                )
 
             try:
                 result = json.loads(text)
             except json.JSONDecodeError as je:
                 if response.finish_reason != "stop":
                     logger.warning(
-                        f"Consolidation JSON likely truncated (finish_reason={response.finish_reason}). Skipping this iteration."
+                        f"Consolidation JSON likely truncated or failed (finish_reason={response.finish_reason}). "
+                        f"Raw text length: {len(text)}. Skipping this iteration."
                     )
+                    if len(text) > 0:
+                        logger.debug(f"Raw text content: {text}")
                 else:
                     logger.error(
-                        f"Failed to parse consolidation JSON: {je}. Raw text preview: {text[:100]}..."
+                        f"Failed to parse consolidation JSON: {je}. "
+                        f"Raw text preview: {text[:200]!r}"
                     )
+                    # If it's a critical parsing error, log a bit more of the context
+                    if len(text) < 10:
+                        logger.debug(f"Full response object for debugging: {response}")
                 return
 
             if entry := result.get("history_entry"):
