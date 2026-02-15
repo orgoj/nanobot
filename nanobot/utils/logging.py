@@ -50,14 +50,15 @@ def setup_logging(config: Config):
     if not config.logging.enabled:
         return
 
-    # Stderr handler - plain text, no color tags to avoid parsing errors
+    # Stderr handler - plain text, NO colors, no color tags to avoid parsing errors
     logger.add(
         sys.stderr,
         level=config.logging.stderr_level,
         format="{level: <8} | {name}:{function}:{line} - {message}\n",
+        colorize=False,
     )
 
-    # File handler (JSONL)
+    # File handler (JSONL) - NO colors
     log_file = Path(config.logging.file_path).expanduser()
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -65,6 +66,7 @@ def setup_logging(config: Config):
         str(log_file),
         level=config.logging.level,
         format=lambda r: jsonl_serializer(r).replace("{", "{{").replace("}", "}}"),
+        colorize=False,
     )
 
     logger.info(f"Logging initialized. File: {log_file}")
