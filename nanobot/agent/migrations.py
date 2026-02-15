@@ -25,6 +25,7 @@ class MigrationManager:
         # Scan for v{number}_*.md files
         pending = []
         if not self.upgrades_dir.exists():
+            # In package mode, this should always exist if there are upgrades
             return
 
         for f in self.upgrades_dir.glob("v*.md"):
@@ -34,9 +35,14 @@ class MigrationManager:
                 if version > current_v:
                     pending.append((version, f))
 
+        if not pending:
+            logger.info(f"No pending prompt upgrades (current version: v{current_v})")
+            return
+
         # Sort by version number and apply
         for version, f in sorted(pending):
-            logger.info(f"Applying upgrade v{version}: {f.name}")
+            logger.info(f"Applying automatic prompt upgrade v{version}: {f.name}")
+            print(f"🆙 Applying automatic prompt upgrade v{version}...")
             try:
                 instruction = f.read_text()
                 await self.agent.process_direct(
@@ -47,8 +53,10 @@ class MigrationManager:
                 )
                 self._set_version(version)
                 logger.info(f"Upgrade to v{version} successful.")
+                print(f"✅ Upgrade to v{version} successful.")
             except Exception as e:
                 logger.error(f"Failed to apply upgrade v{version}: {e}")
+                print(f"❌ Failed to apply upgrade v{version}: {e}")
                 break  # Stop at first failure to keep version consistent
 
     def _get_version(self) -> int:
