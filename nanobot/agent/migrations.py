@@ -9,13 +9,13 @@ from loguru import logger
 class MigrationManager:
     """
     MigrationManager handles automatic execution of upgrade instructions.
-    Uses a simple version number stored in .version file.
+    Uses a simple version number stored in .prompt_version file.
     """
 
     def __init__(self, workspace: Path, agent_loop):
         self.workspace = workspace
         self.upgrades_dir = Path(__file__).parent / "upgrades"
-        self.version_file = workspace.parent / ".version"
+        self.version_file = workspace.parent / ".prompt_version"
         self.agent = agent_loop
 
     async def run_pending(self):
