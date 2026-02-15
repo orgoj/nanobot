@@ -85,6 +85,10 @@ class SubagentManager:
         self.max_iterations = max_iterations
         self.max_run_time = max_run_time
         self.max_completed_tasks = max_completed_tasks
+        # Guardrails to prevent runaway context growth in retry loops.
+        self.max_context_messages = 80
+        self.max_context_chars = 100_000
+        self.max_error_chars = 400
         # LLM timeout with fallback to config or default 120s
         self.llm_timeout: float = (
             llm_timeout
@@ -265,6 +269,8 @@ class SubagentManager:
                                 }
                             )
 
+                        self._apply_message_budget(state, task_id)
+
                         # 2. Call LLM
                         logger.debug(f"Subagent [{task_id}] calling LLM ({self.model})...")
                         response = await self.provider.chat(
@@ -303,10 +309,14 @@ class SubagentManager:
                             logger.error(
                                 f"Subagent [{task_id}] encountered LLM error: {response.content}"
                             )
+                            safe_error = self._sanitize_error_for_prompt(response.content)
                             state.messages.append(
                                 {
                                     "role": "user",
-                                    "content": f"LLM error occurred: {response.content}\nPlease try to recover or summarize the failure.",
+                                    "content": (
+                                        f"LLM error occurred: {safe_error}\n"
+                                        "Treat this as transient if possible. Retry once or summarize failure briefly."
+                                    ),
                                 }
                             )
                             continue
@@ -336,10 +346,14 @@ class SubagentManager:
                             break
                     except Exception as e:
                         logger.error(f"Subagent [{task_id}] loop iteration {iteration} error: {e}")
+                        safe_error = self._sanitize_error_for_prompt(str(e))
                         state.messages.append(
                             {
                                 "role": "user",
-                                "content": f"INTERNAL ERROR during subagent execution: {str(e)}\nPlease try to recover or summarize the failure.",
+                                "content": (
+                                    f"INTERNAL ERROR during subagent execution: {safe_error}\n"
+                                    "Please recover if possible or summarize failure briefly."
+                                ),
                             }
                         )
                         if iteration >= self.max_iterations:
@@ -379,6 +393,88 @@ class SubagentManager:
             for state in to_remove:
                 self._registry.pop(state.task_id, None)
                 logger.debug(f"Cleaned up old task [{state.task_id}] from registry")
+
+    def _sanitize_error_for_prompt(self, raw_error: str | None) -> str:
+        """Keep error hints short and stable to avoid prompt bloat."""
+        if not raw_error:
+            return "unknown error"
+
+        text = raw_error.strip()
+        if not text:
+            return "unknown error"
+
+        # Remove noisy traceback payloads that can explode prompt size.
+        for marker in ("Traceback (most recent call last):", "received_args="):
+            if marker in text:
+                text = text.split(marker, 1)[0].strip()
+
+        # Keep one line and cap size.
+        text = " ".join(text.split())
+        if len(text) > self.max_error_chars:
+            text = f"{text[: self.max_error_chars - 3]}..."
+        return text
+
+    def _apply_message_budget(self, state: SubagentState, task_id: str) -> None:
+        """Trim old chat history when context grows too large."""
+        if not state.messages:
+            return
+
+        pinned: list[dict[str, Any]] = []
+        idx = 0
+        if state.messages and state.messages[0].get("role") == "system":
+            pinned.append(state.messages[0])
+            idx = 1
+        if (
+            len(state.messages) > idx
+            and state.messages[idx].get("role") == "user"
+            and state.messages[idx].get("content") == state.task
+        ):
+            pinned.append(state.messages[idx])
+            idx += 1
+
+        tail = state.messages[idx:]
+        tail = [
+            m
+            for m in tail
+            if not (
+                m.get("role") == "system"
+                and m.get("content")
+                == "Context was trimmed to stay within limits. Focus on the latest tool outputs and continue the current task."
+            )
+        ]
+        trimmed = False
+
+        if len(tail) > self.max_context_messages:
+            tail = tail[-self.max_context_messages :]
+            trimmed = True
+
+        def _msg_len(msg: dict[str, Any]) -> int:
+            content = msg.get("content")
+            if isinstance(content, str):
+                return len(content)
+            return len(str(content)) if content is not None else 0
+
+        total_chars = sum(_msg_len(m) for m in tail)
+        while tail and total_chars > self.max_context_chars and len(tail) > 10:
+            removed = tail.pop(0)
+            total_chars -= _msg_len(removed)
+            trimmed = True
+
+        if not trimmed:
+            return
+
+        note = {
+            "role": "system",
+            "content": (
+                "Context was trimmed to stay within limits. Focus on the latest tool outputs and"
+                " continue the current task."
+            ),
+        }
+        state.messages = pinned + [note] + tail
+        logger.warning(
+            f"Subagent [{task_id}] context trimmed: kept {len(state.messages)} messages, "
+            f"tail_chars={total_chars}"
+        )
 
     async def _announce_result(self, state: SubagentState, status: str) -> None:
         """Announce the subagent result back to the main agent."""
