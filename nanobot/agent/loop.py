@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -136,6 +137,7 @@ class AgentLoop:
         )
 
         self._running = False
+        self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
@@ -293,22 +295,57 @@ class AgentLoop:
 
         while self._running:
             try:
+                # Consume messages from the bus
                 msg = await asyncio.wait_for(self.bus.consume_inbound(), timeout=1.0)
-                try:
+
+                # Spawn a background task to process the message.
+                # This ensures we immediately go back to consuming the next message.
+                # Logic inside _dispatch_message will handle locking for slow tasks.
+                asyncio.create_task(self._dispatch_message(msg))
+
+            except asyncio.TimeoutError:
+                continue
+
+    async def _dispatch_message(self, msg: InboundMessage) -> None:
+        """
+        Dispatch message to appropriate processing logic.
+        Handles locking for sequential chat processing while allowing parallel fast commands.
+        """
+        try:
+            # Check if it's a fast command
+            is_fast_command = False
+            raw_content = msg.content.strip()
+            if raw_content.startswith("/"):
+                cmd = raw_content.split()[0].lower()
+                # Fast commands that don't need the session lock (mostly read-only)
+                # Note: /new is NOT here because it modifies session state heavily
+                if cmd in ["/status", "/ping", "/uptime", "/help", "/cancel"]:
+                    is_fast_command = True
+
+            if is_fast_command:
+                # Fast path: Run immediately without lock
+                response = await self._process_message(msg)
+                if response:
+                    await self.bus.publish_outbound(response)
+            else:
+                # Standard path: Run with session lock to ensure order
+                session_key = msg.session_key
+                lock = self._session_locks[session_key]
+
+                async with lock:
                     response = await self._process_message(msg)
                     if response:
                         await self.bus.publish_outbound(response)
-                except Exception as e:
-                    logger.error(f"Error processing message: {e}")
-                    await self.bus.publish_outbound(
-                        OutboundMessage(
-                            channel=msg.channel,
-                            chat_id=msg.chat_id,
-                            content=f"Sorry, I encountered an error: {str(e)}",
-                        )
-                    )
-            except asyncio.TimeoutError:
-                continue
+
+        except Exception as e:
+            logger.error(f"Error dispatching message: {e}")
+            await self.bus.publish_outbound(
+                OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content=f"Sorry, I encountered an error: {str(e)}",
+                )
+            )
 
     def stop(self) -> None:
         """Stop the agent loop."""
@@ -729,5 +766,23 @@ Respond with ONLY valid JSON, no markdown fences."""
         """
         msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
 
-        response = await self._process_message(msg, session_key=session_key)
+        # Direct processing also uses the dispatcher logic to respect locks
+        # But here we need the return value immediately, so we simulate the dispatcher logic inline
+        # or we just assume direct calls are blocking.
+        # Actually, for process_direct, we want the result.
+
+        # We'll use the lock if it's not a fast command.
+        is_fast_command = False
+        if content.strip().startswith(("/",)):
+            cmd = content.strip().split()[0].lower()
+            if cmd in ["/status", "/ping", "/uptime", "/help", "/cancel"]:
+                is_fast_command = True
+
+        if is_fast_command:
+            response = await self._process_message(msg, session_key=session_key)
+        else:
+            lock = self._session_locks[session_key]
+            async with lock:
+                response = await self._process_message(msg, session_key=session_key)
+
         return response.content if response else ""
