@@ -45,6 +45,10 @@ agents:
     # LLM API timeout in seconds (per request)
     # Increase for slow models or complex tasks
     llm_timeout: 120
+    
+    # Heartbeat interval in seconds (periodic wake-up to check HEARTBEAT.md)
+    # Default: 1800 (30 minutes). Set to 0 to disable heartbeat.
+    heartbeat_interval: 1800
   
   # Main agent (chat/interactive) - fine-tuned settings
   main:

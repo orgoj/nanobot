@@ -218,6 +218,7 @@ class AgentDefaults(BaseModel):
     memory_window: int = 50
     startup_prompt: str | None = None
     startup_target: str = "cli:direct"
+    heartbeat_interval: int = 1800  # Heartbeat interval in seconds (30 min)
 
 
 class AgentsConfig(BaseModel):
