@@ -640,24 +640,39 @@ Respond with ONLY valid JSON, no markdown fences."""
                     {"role": "user", "content": prompt},
                 ],
                 model=self.model,
+                max_tokens=self.max_tokens,  # Use configured max_tokens
                 timeout=60.0,
             )
+
+            if response.finish_reason == "error":
+                logger.error(f"Memory consolidation failed due to LLM error: {response.content}")
+                return
+
             text = (response.content or "").strip()
 
             # More robust JSON extraction
             json_start = text.find("{")
             json_end = text.rfind("}")
-            if json_start != -1 and json_end != -1:
-                text = text[json_start : json_end + 1]
+
+            if json_start != -1:
+                if json_end != -1 and json_end > json_start:
+                    text = text[json_start : json_end + 1]
+                else:
+                    text = text[json_start:]
             elif text.startswith("```"):
                 text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
             try:
                 result = json.loads(text)
             except json.JSONDecodeError as je:
-                logger.error(
-                    f"Failed to parse consolidation JSON: {je}. Raw text preview: {text[:100]}..."
-                )
+                if response.finish_reason != "stop":
+                    logger.warning(
+                        f"Consolidation JSON likely truncated (finish_reason={response.finish_reason}). Skipping this iteration."
+                    )
+                else:
+                    logger.error(
+                        f"Failed to parse consolidation JSON: {je}. Raw text preview: {text[:100]}..."
+                    )
                 return
 
             if entry := result.get("history_entry"):

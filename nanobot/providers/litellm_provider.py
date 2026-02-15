@@ -6,6 +6,7 @@ from typing import Any
 
 import litellm
 from litellm import acompletion
+from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.providers.registry import find_by_model, find_gateway
@@ -84,6 +85,8 @@ class LiteLLMProvider(LLMProvider):
         # Standard mode: auto-prefix for known providers
         spec = find_by_model(model)
         if spec and spec.litellm_prefix:
+            if spec.strip_model_prefix:
+                model = model.split("/")[-1]
             if not any(model.startswith(s) for s in spec.skip_prefixes):
                 model = f"{spec.litellm_prefix}/{model}"
 
@@ -158,6 +161,7 @@ class LiteLLMProvider(LLMProvider):
             return self._parse_response(response)
         except Exception as e:
             # Return error as content for graceful handling
+            logger.error(f"LLM call failed ({model}): {str(e)}")
             return LLMResponse(
                 content=f"Error calling LLM: {str(e)}",
                 finish_reason="error",
