@@ -601,6 +601,8 @@ agents:
     chat_model: anthropic/claude-sonnet-4  # Fast, for user chat
     task_model: anthropic/claude-opus-4-5  # Powerful, for subagents
     task_max_iterations: 50
+    task_max_run_time: 3600  # Max run time for subagents (seconds)
+    llm_timeout: 120         # LLM API timeout (seconds)
 ```
 
 ### Providers

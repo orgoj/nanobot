@@ -187,6 +187,7 @@ class MainAgentConfig(BaseModel):
     # Memory consolidation settings
     consolidation_threshold: float = 0.8  # Trigger at 80% of memory_window
     consolidation_keep_ratio: float = 0.5  # Keep 50% after consolidation
+    llm_timeout: int | None = None  # LLM API timeout (falls back to defaults.llm_timeout)
 
 
 class TaskAgentConfig(BaseModel):
@@ -196,7 +197,9 @@ class TaskAgentConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 8192
     max_iterations: int = 30  # Longer iteration limit for complex tasks
+    max_run_time: int | None = None  # Max running time in seconds (falls back to defaults.task_max_run_time)
     max_completed_tasks: int = 100  # Registry cleanup threshold
+    llm_timeout: int | None = None  # LLM API timeout (falls back to defaults.llm_timeout)
 
 
 class AgentDefaults(BaseModel):
@@ -206,13 +209,16 @@ class AgentDefaults(BaseModel):
     model: str = "anthropic/claude-opus-4-5"
     chat_model: str | None = None  # Fast model for chat/responsiveness
     task_model: str | None = None  # Powerful model for subagent tasks
+    llm_timeout: int = 120  # LLM API timeout in seconds
     max_tokens: int = 8192
     temperature: float = 0.7
     max_tool_iterations: int = 20
     task_max_iterations: int = 30  # Max iterations for subagents
+    task_max_run_time: int = 3600  # Max running time for subagents in seconds (1h)
     memory_window: int = 50
     startup_prompt: str | None = None
     startup_target: str = "cli:direct"
+    heartbeat_interval: int = 1800  # Heartbeat interval in seconds (30 min)
 
 
 class AgentsConfig(BaseModel):

@@ -65,7 +65,9 @@ class SubagentManager:
         exec_config: ExecToolConfig | None = None,
         restrict_to_workspace: bool = False,
         max_iterations: int = 30,
+        max_run_time: int = 3600,
         max_completed_tasks: int = 100,
+        llm_timeout: float | None = None,
         config: Any | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
@@ -80,7 +82,22 @@ class SubagentManager:
         self.exec_config = exec_config or ExecToolConfig()
         self.restrict_to_workspace = restrict_to_workspace
         self.max_iterations = max_iterations
+        self.max_run_time = max_run_time
         self.max_completed_tasks = max_completed_tasks
+        # LLM timeout with fallback to config or default 120s
+        self.llm_timeout: float = (
+            llm_timeout
+            if llm_timeout is not None
+            else (
+                float(config.agents.task.llm_timeout)
+                if config and config.agents.task.llm_timeout is not None
+                else (
+                    float(config.agents.defaults.llm_timeout)
+                    if config
+                    else 120.0
+                )
+            )
+        )
         self.config = config
         self._registry: dict[str, SubagentState] = {}
 
@@ -146,6 +163,26 @@ class SubagentManager:
         return False
 
     async def _run_subagent(self, state: SubagentState) -> None:
+        """Execute the subagent task loop with a total run time limit."""
+        try:
+            await asyncio.wait_for(self._run_subagent_loop(state), timeout=float(self.max_run_time))
+        except asyncio.TimeoutError:
+            logger.error(f"Subagent [{state.task_id}] timed out after {self.max_run_time}s")
+            state.status = "failed"
+            state.last_result = f"Task timed out after {self.max_run_time} seconds."
+            state.end_time = datetime.now()
+            await self._announce_result(state, "error")
+        except asyncio.CancelledError:
+            # Already handled in _run_subagent_loop, but re-raise for proper task cleanup
+            raise
+        except Exception as e:
+            logger.error(f"Subagent [{state.task_id}] crashed: {e}")
+            state.status = "failed"
+            state.last_result = f"Crashed: {str(e)}"
+            state.end_time = datetime.now()
+            await self._announce_result(state, "error")
+
+    async def _run_subagent_loop(self, state: SubagentState) -> None:
         """Execute the subagent task loop with mailbox checking and observability."""
         task_id = state.task_id
         session_key = f"subagent:{task_id}"
@@ -237,7 +274,7 @@ class SubagentManager:
                             model=self.model,
                             temperature=self.temperature,
                             max_tokens=self.max_tokens,
-                            timeout=120.0,
+                            timeout=self.llm_timeout,
                         )
                         logger.debug(f"Subagent [{task_id}] LLM response received")
 

@@ -89,12 +89,24 @@ class AgentLoop:
         )
         self.memory_window = memory_window if memory_window is not None else main_cfg.memory_window
 
+        # LLM timeout configuration
+        self.llm_timeout = float(
+            main_cfg.llm_timeout
+            if main_cfg.llm_timeout is not None
+            else self.config.agents.defaults.llm_timeout
+        )
+
         # Task agent configuration
         task_cfg = self.config.agents.task
         self.task_model = (
             task_cfg.model
             or self.config.agents.defaults.task_model
             or self.config.agents.defaults.model
+        )
+        self.task_max_run_time = (
+            task_cfg.max_run_time
+            if task_cfg.max_run_time is not None
+            else self.config.agents.defaults.task_max_run_time
         )
 
         self.brave_api_key = brave_api_key
@@ -116,6 +128,7 @@ class AgentLoop:
             exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
             max_iterations=task_cfg.max_iterations,
+            max_run_time=self.task_max_run_time,
             max_completed_tasks=task_cfg.max_completed_tasks,
             config=self.config,
         )
@@ -223,7 +236,7 @@ class AgentLoop:
                     model=self.model,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
-                    timeout=120.0,
+                    timeout=self.llm_timeout,
                 )
 
                 if response.has_tool_calls:

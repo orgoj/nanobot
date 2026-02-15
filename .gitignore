@@ -23,3 +23,6 @@ instance/
 .dippy
 .pi/
 uv.lock
+
+bridge/node_modules
+bridge/package-lock.json
