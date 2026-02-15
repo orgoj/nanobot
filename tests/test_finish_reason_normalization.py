@@ -7,35 +7,36 @@ from nanobot.providers.litellm_provider import VALID_FINISH_REASONS, LiteLLMProv
 
 @pytest.mark.asyncio
 async def test_finish_reason_normalization():
-    """Test that non-standard finish reasons are normalized to 'stop'."""
-    provider = LiteLLMProvider(api_key="test-key")
+    """Test that non-standard finish reasons are normalized to 'stop' via monkeypatch."""
+    # Test the monkeypatch directly
+    from nanobot.providers.litellm_provider import _patched_convert
 
-    # Mock response with 'abort' finish reason and some content
-    mock_choice = MagicMock()
-    mock_choice.finish_reason = "abort"
-    mock_choice.message.content = "Some content"
-    mock_choice.message.tool_calls = []
+    response_dict = {
+        "choices": [
+            {"finish_reason": "abort", "message": {"content": "Some content"}},
+            {"finish_reason": "unknown_reason", "message": {"content": "Other content"}},
+        ]
+    }
 
-    mock_response = MagicMock()
-    mock_response.choices = [mock_choice]
-    mock_response.usage = None
-    mock_response.model = "test-model"
+    # We need to mock the original_convert because it will fail on a dict mock
+    # or we can just check if it modifies the dict
+    def mock_original(obj, *args, **kwargs):
+        return obj
 
-    # Test normalization of 'abort' to 'stop' when content is present
-    result = provider._parse_response(mock_response)
-    assert result.finish_reason == "stop"
-    assert result.content == "Some content"
+    import nanobot.providers.litellm_provider
 
-    # Test normalization of other unknown reasons
-    mock_choice.finish_reason = "unknown_reason_from_provider"
-    result = provider._parse_response(mock_response)
-    assert result.finish_reason == "stop"
+    nanobot.providers.litellm_provider._original_convert = mock_original
+
+    _patched_convert(response_dict)
+
+    assert response_dict["choices"][0]["finish_reason"] == "stop"
+    assert response_dict["choices"][1]["finish_reason"] == "stop"
 
     # Test that standard reasons are preserved
     for reason in VALID_FINISH_REASONS:
-        mock_choice.finish_reason = reason
-        result = provider._parse_response(mock_response)
-        assert result.finish_reason == reason
+        response_dict = {"choices": [{"finish_reason": reason}]}
+        _patched_convert(response_dict)
+        assert response_dict["choices"][0]["finish_reason"] == reason
 
 
 @pytest.mark.asyncio

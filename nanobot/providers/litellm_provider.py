@@ -11,6 +11,13 @@ from loguru import logger
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.providers.registry import find_by_model, find_gateway
 
+try:
+    import litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response as convert_dict_to_response
+
+    _original_convert = convert_dict_to_response.convert_to_model_response_object
+except (ImportError, AttributeError):
+    _original_convert = None
+
 # List of standard finish reasons to protect against non-standard provider outputs
 # Rewriting non-standard reasons (like 'abort') to 'stop' ensures internal consistency.
 VALID_FINISH_REASONS = [
@@ -24,6 +31,22 @@ VALID_FINISH_REASONS = [
     "finish_reason_unspecified",
     "malformed_function_call",
 ]
+
+
+def _patched_convert(response_object, *args, **kwargs):
+    """Monkeypatch to sanitize finish_reason before LiteLLM's Pydantic validation."""
+    if isinstance(response_object, dict) and "choices" in response_object:
+        for choice in response_object["choices"]:
+            raw_reason = choice.get("finish_reason")
+            if raw_reason and raw_reason not in VALID_FINISH_REASONS:
+                if raw_reason == "abort":
+                    logger.debug("LiteLLM: Sanitizing 'abort' finish_reason to 'stop'")
+                choice["finish_reason"] = "stop"
+    return _original_convert(response_object, *args, **kwargs)
+
+
+if _original_convert:
+    convert_dict_to_response.convert_to_model_response_object = _patched_convert
 
 
 class LiteLLMProvider(LLMProvider):
