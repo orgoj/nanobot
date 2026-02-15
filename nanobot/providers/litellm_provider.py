@@ -5,18 +5,13 @@ import os
 from typing import Any
 
 import litellm
+import litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response as convert_dict_to_response
+import litellm.main
 from litellm import acompletion
 from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.providers.registry import find_by_model, find_gateway
-
-try:
-    import litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response as convert_dict_to_response
-
-    _original_convert = convert_dict_to_response.convert_to_model_response_object
-except (ImportError, AttributeError):
-    _original_convert = None
 
 # List of standard finish reasons to protect against non-standard provider outputs
 # Rewriting non-standard reasons (like 'abort') to 'stop' ensures internal consistency.
@@ -33,20 +28,25 @@ VALID_FINISH_REASONS = [
 ]
 
 
-def _patched_convert(response_object, *args, **kwargs):
-    """Monkeypatch to sanitize finish_reason before LiteLLM's Pydantic validation."""
-    if isinstance(response_object, dict) and "choices" in response_object:
-        for choice in response_object["choices"]:
-            raw_reason = choice.get("finish_reason")
-            if raw_reason and raw_reason not in VALID_FINISH_REASONS:
-                if raw_reason == "abort":
-                    logger.debug("LiteLLM: Sanitizing 'abort' finish_reason to 'stop'")
-                choice["finish_reason"] = "stop"
-    return _original_convert(response_object, *args, **kwargs)
+# Global patch across all known LiteLLM entry points for this function
+_original_convert = convert_dict_to_response.convert_to_model_response_object
+if _original_convert.__name__ != "_patched_convert":
 
+    def _patched_convert(response_object, *args, **kwargs):
+        """Monkeypatch to sanitize finish_reason before LiteLLM's Pydantic validation."""
+        if isinstance(response_object, dict) and "choices" in response_object:
+            for choice in response_object["choices"]:
+                raw_reason = choice.get("finish_reason")
+                if raw_reason and raw_reason not in VALID_FINISH_REASONS:
+                    if raw_reason == "abort":
+                        logger.debug("LiteLLM: Sanitizing 'abort' finish_reason to 'stop'")
+                    choice["finish_reason"] = "stop"
+        return _original_convert(response_object, *args, **kwargs)
 
-if _original_convert:
     convert_dict_to_response.convert_to_model_response_object = _patched_convert
+    litellm.main.convert_to_model_response_object = _patched_convert
+    if hasattr(litellm, "convert_to_model_response_object"):
+        litellm.convert_to_model_response_object = _patched_convert
 
 
 class LiteLLMProvider(LLMProvider):
@@ -125,8 +125,6 @@ class LiteLLMProvider(LLMProvider):
         # Standard mode: auto-prefix for known providers
         spec = find_by_model(model)
         if spec and spec.litellm_prefix:
-            if spec.strip_model_prefix:
-                model = model.split("/")[-1]
             if not any(model.startswith(s) for s in spec.skip_prefixes):
                 model = f"{spec.litellm_prefix}/{model}"
 
@@ -198,8 +196,6 @@ class LiteLLMProvider(LLMProvider):
 
         try:
             response = await acompletion(**kwargs)
-            # Log the response object for debugging when needed
-            # logger.trace(f"LiteLLM raw response: {response}")
             return self._parse_response(response)
         except Exception as e:
             # Return error as content for graceful handling
