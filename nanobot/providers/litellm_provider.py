@@ -2,11 +2,21 @@
 
 import json
 import os
+import sys
 from typing import Any
 
 import litellm
-import litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response as convert_dict_to_response
 import litellm.main
+
+try:
+    import litellm.utils
+except ImportError:
+    pass
+try:
+    import litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response as convert_dict_to_response
+except ImportError:
+    convert_dict_to_response = None
+
 from litellm import acompletion
 from loguru import logger
 
@@ -25,28 +35,64 @@ VALID_FINISH_REASONS = [
     "eos",
     "finish_reason_unspecified",
     "malformed_function_call",
+    "null",
 ]
 
 
-# Global patch across all known LiteLLM entry points for this function
-_original_convert = convert_dict_to_response.convert_to_model_response_object
-if _original_convert.__name__ != "_patched_convert":
+def _patched_convert(response_object, *args, **kwargs):
+    """Monkeypatch to sanitize finish_reason before LiteLLM's Pydantic validation."""
+    if isinstance(response_object, dict) and "choices" in response_object:
+        for choice in response_object["choices"]:
+            raw_reason = choice.get("finish_reason")
+            if raw_reason and raw_reason not in VALID_FINISH_REASONS:
+                if raw_reason == "abort":
+                    logger.debug("LiteLLM: Sanitizing 'abort' finish_reason to 'stop'")
+                choice["finish_reason"] = "stop"
+    return _original_convert(response_object, *args, **kwargs)
 
-    def _patched_convert(response_object, *args, **kwargs):
-        """Monkeypatch to sanitize finish_reason before LiteLLM's Pydantic validation."""
-        if isinstance(response_object, dict) and "choices" in response_object:
-            for choice in response_object["choices"]:
-                raw_reason = choice.get("finish_reason")
-                if raw_reason and raw_reason not in VALID_FINISH_REASONS:
-                    if raw_reason == "abort":
-                        logger.debug("LiteLLM: Sanitizing 'abort' finish_reason to 'stop'")
-                    choice["finish_reason"] = "stop"
-        return _original_convert(response_object, *args, **kwargs)
 
-    convert_dict_to_response.convert_to_model_response_object = _patched_convert
-    litellm.main.convert_to_model_response_object = _patched_convert
-    if hasattr(litellm, "convert_to_model_response_object"):
-        litellm.convert_to_model_response_object = _patched_convert
+# Global flag to ensure we only patch once
+if not getattr(litellm, "_NANOBOT_PATCHED", False):
+    # 1. Patch convert_to_model_response_object everywhere
+    _original_convert = None
+    if convert_dict_to_response:
+        _original_convert = convert_dict_to_response.convert_to_model_response_object
+
+    if _original_convert:
+        # Patch the source
+        convert_dict_to_response.convert_to_model_response_object = _patched_convert
+
+        # Patch all modules that might have imported it
+        for module_name, module in list(sys.modules.items()):
+            if module_name.startswith("litellm") and hasattr(
+                module, "convert_to_model_response_object"
+            ):
+                setattr(module, "convert_to_model_response_object", _patched_convert)
+
+        # Explicitly patch common entry points
+        litellm.main.convert_to_model_response_object = _patched_convert
+        if hasattr(litellm, "utils"):
+            litellm.utils.convert_to_model_response_object = _patched_convert
+        if hasattr(litellm, "convert_to_model_response_object"):
+            litellm.convert_to_model_response_object = _patched_convert
+
+    # 2. Deep patch: Catch the Pydantic ValidationError at the source (Choices model)
+    try:
+        from litellm.types.utils import Choices
+
+        _original_choices_init = Choices.__init__
+
+        def _patched_choices_init(self, **kwargs):
+            if "finish_reason" in kwargs and kwargs["finish_reason"] not in VALID_FINISH_REASONS:
+                kwargs["finish_reason"] = "stop"
+            _original_choices_init(self, **kwargs)
+
+        Choices.__init__ = _patched_choices_init
+    except Exception as e:
+        logger.warning(f"Failed to monkeypatch litellm.types.utils.Choices: {e}")
+
+    litellm._NANOBOT_PATCHED = True
+    logger.info("LiteLLM successfully patched for non-standard finish_reason support")
 
 
 class LiteLLMProvider(LLMProvider):
