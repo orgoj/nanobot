@@ -49,6 +49,9 @@ class LiteLLMProvider(LLMProvider):
         litellm.suppress_debug_info = True
         # Drop unsupported parameters for providers (e.g., gpt-5 rejects some params)
         litellm.drop_params = True
+        # Don't let litellm crash on unknown finish_reason or other validation errors
+        # This is a safety net for providers that return non-standard values (like 'abort')
+        litellm.validate = False
 
     def _setup_env(self, api_key: str, api_base: str | None, model: str) -> None:
         """Set environment variables based on detected provider."""
