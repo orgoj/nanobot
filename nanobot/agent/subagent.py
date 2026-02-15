@@ -91,11 +91,7 @@ class SubagentManager:
             else (
                 float(config.agents.task.llm_timeout)
                 if config and config.agents.task.llm_timeout is not None
-                else (
-                    float(config.agents.defaults.llm_timeout)
-                    if config
-                    else 120.0
-                )
+                else (float(config.agents.defaults.llm_timeout) if config else 120.0)
             )
         )
         self.config = config
