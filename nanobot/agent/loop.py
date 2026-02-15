@@ -641,7 +641,7 @@ Respond with ONLY valid JSON, no markdown fences."""
                 ],
                 model=self.model,
                 max_tokens=self.max_tokens,  # Use configured max_tokens
-                timeout=60.0,
+                timeout=self.llm_timeout,  # Use configured llm_timeout instead of hardcoded 60s
             )
 
             if response.finish_reason == "error":

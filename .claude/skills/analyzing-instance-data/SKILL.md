@@ -7,12 +7,22 @@ description: "This skill should be used when the user asks to analyze the live a
 
 This skill provides a workflow for inspecting the "live" state of a nanobot instance located in the `instance/` directory. This data is a snapshot of an active agent and should be used for diagnostic and planning purposes.
 
-## CRITICAL: READ-ONLY ACCESS
+## CRITICAL: READ-ONLY ACCESS (Snapshots Only)
 
-**DO NOT MODIFY** any files in `/home/michael/projects/nanobot/instance/nanobotnb/.nanobot/`.
-These files are managed by the running instance or synchronized from other sources. Any changes made here will likely be overwritten.
+**DO NOT MODIFY** any files in `/home/michael/projects/nanobot/instance/nanobotnb/.nanobot/` directly with the expectation of persistence.
+These files are **snapshots** synchronized from the running instance. Any changes made here **will be overwritten** during the next sync from the source.
 
-Use the insights gained from this analysis to:
+### PROPER WORKFLOW FOR CHANGES:
+If you need to update agent behavior, prompts, or configuration:
+1.  **Update the source** in the main project directories:
+    - Code/Logic: `nanobot/`
+    - Global Prompts: `nanobot/agent/prompts/` (or wherever defined in the code)
+    - Config Templates: `config.example.yaml`
+    - Workspace Baseline: `workspace/` (including `AGENTS.md`, `HEARTBEAT.md`, etc.)
+2.  **Deploy changes** to the instance (e.g., via `ru sync`, git push/pull, or the deployment script).
+3.  **Emergency Live Edits**: If you *must* make an emergency fix directly on the live instance to stop a loop (like double reporting), you **MUST** immediately mirror those exact changes back to the source files in `nanobot/workspace/` or `nanobot/skills/` to prevent them from being lost.
+
+Use the insights gained from instance data to:
 1. Update source code in `nanobot/`.
 2. Update system prompts in `nanobot/agent/prompts/`.
 3. Update configuration templates like `config.example.yaml`.
@@ -37,9 +47,20 @@ Use the insights gained from this analysis to:
 - **Sessions**: `/home/michael/projects/nanobot/instance/nanobotnb/.nanobot/sessions/`
   - Raw session data and message history.
 
-## Diagnostic Workflow
+## Diagnostic & Action Protocol
 
 1. **Check Failures**: Start with `FAILURES.md` to see what went wrong from the agent's perspective.
 2. **Trace Logs**: Use the `task_id` from a failure to grep through `nanobot.jsonl` for the full context.
-3. **Inspect Context**: Look at the files in `workspace/memory/` to understand why the agent made certain decisions.
-4. **Propose Fixes**: Map the failures to specific logic in `nanobot/` or instructions in prompts.
+3. **Analyze Root Cause**: Determine if it's a **Code Bug** or an **Agent Logic/Config** issue.
+
+### How to Apply Fixes:
+
+- **If it's a CODE BUG**: Fix the logic in `nanobot/` (source code).
+- **If it's a SYSTEMIC PROMPT issue**: Create an upgrade script or update the global templates in `nanobot/`.
+- **If it's an AGENT-SPECIFIC issue (logic/config/prompts)**: 
+    - **DO NOT** modify the source files in `workspace/` or `skills/` of this project.
+    - **DO NOT** perform "emergency live edits" on the instance unless explicitly asked for a quick fix that doesn't need to be systemic.
+    - **REPORT** the finding to the USER. The user or the agent itself will handle the correction within that specific instance.
+    - An agent is responsible for its own self-improvement and fixing its local workspace.
+
+**CRITICAL**: Modifications to `workspace/` or `skills/` in this repository act as a baseline for *new* or *synced* instances. Changing them here to fix a single bot's mistake can cause regressions or overwrite unique logic in other bots.

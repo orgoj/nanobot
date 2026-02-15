@@ -161,16 +161,35 @@ class LiteLLMProvider(LLMProvider):
             return self._parse_response(response)
         except Exception as e:
             # Return error as content for graceful handling
-            logger.error(f"LLM call failed ({model}): {str(e)}")
+            # Escape HTML tags to avoid loguru color-parsing errors
+            safe_msg = str(e).replace("<", "&lt;").replace(">", "&gt;")
+            logger.error(f"LLM call failed ({model}): {safe_msg}")
             return LLMResponse(
-                content=f"Error calling LLM: {str(e)}",
+                content=f"Error calling LLM: {safe_msg}",
                 finish_reason="error",
             )
 
     def _parse_response(self, response: Any) -> LLMResponse:
         """Parse LiteLLM response into our standard format."""
+        if not response or not hasattr(response, "choices") or not response.choices:
+            return LLMResponse(
+                content="Error: Empty or invalid response from LLM provider.",
+                finish_reason="error",
+            )
+
         choice = response.choices[0]
         message = choice.message
+
+        # Handle 'abort' finish reason which can happen with LiteLLM timeouts or specific provider errors
+        finish_reason = choice.finish_reason or "stop"
+        if finish_reason == "abort":
+            logger.error(
+                "LLM call was aborted (finish_reason='abort'). This may be a timeout or provider issue."
+            )
+            return LLMResponse(
+                content="Error: LLM call was aborted. The request may have timed out or been rejected by the provider.",
+                finish_reason="error",
+            )
 
         tool_calls = []
         if hasattr(message, "tool_calls") and message.tool_calls:

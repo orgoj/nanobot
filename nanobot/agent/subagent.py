@@ -299,6 +299,18 @@ class SubagentManager:
 
                         state.messages.append(assistant_msg)
 
+                        if response.finish_reason == "error":
+                            logger.error(
+                                f"Subagent [{task_id}] encountered LLM error: {response.content}"
+                            )
+                            state.messages.append(
+                                {
+                                    "role": "user",
+                                    "content": f"LLM error occurred: {response.content}\nPlease try to recover or summarize the failure.",
+                                }
+                            )
+                            continue
+
                         if response.has_tool_calls:
                             # Execute tools
                             for tc in response.tool_calls:

@@ -180,21 +180,21 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         strip_model_prefix=False,
         model_overrides=(),
     ),
-    # Zhipu: LiteLLM uses "zai/" prefix by default, but "openai/" is often more stable for Z.AI gateway.
+    # Zhipu: Using "zai/" prefix is native for LiteLLM.
     ProviderSpec(
         name="zhipu",
         keywords=("zhipu", "glm", "zai"),
         env_key="ZAI_API_KEY",
         display_name="Zhipu AI",
-        litellm_prefix="openai",  # glm-4 → openai/glm-4
-        skip_prefixes=("openai/", "openrouter/", "hosted_vllm/"),
+        litellm_prefix="zai",  # glm-4 → zai/glm-4
+        skip_prefixes=("zai/", "openai/", "openrouter/", "hosted_vllm/"),
         env_extras=(("ZHIPUAI_API_KEY", "{api_key}"),),
         is_gateway=False,
         is_local=False,
         detect_by_key_prefix="",
         detect_by_base_keyword="",
         default_api_base="",
-        strip_model_prefix=True,  # zai/glm-4 -> glm-4 -> openai/glm-4
+        strip_model_prefix=True,  # zai/glm-4 -> glm-4 -> zai/glm-4
         model_overrides=(),
     ),
     # DashScope: Qwen models, needs "dashscope/" prefix.
