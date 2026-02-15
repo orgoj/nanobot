@@ -197,7 +197,9 @@ class TaskAgentConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 8192
     max_iterations: int = 30  # Longer iteration limit for complex tasks
-    max_run_time: int | None = None  # Max running time in seconds (falls back to defaults.task_max_run_time)
+    max_run_time: int | None = (
+        None  # Max running time in seconds (falls back to defaults.task_max_run_time)
+    )
     max_completed_tasks: int = 100  # Registry cleanup threshold
     llm_timeout: int | None = None  # LLM API timeout (falls back to defaults.llm_timeout)
 
