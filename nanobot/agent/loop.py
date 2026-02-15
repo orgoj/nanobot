@@ -498,6 +498,16 @@ class AgentLoop:
             )
             self.sessions.save(session)
 
+            # If the agent already used the message tool for this channel,
+            # avoid double-publishing the final content as a separate message.
+            if message_tool := self.tools.get("message"):
+                if (
+                    isinstance(message_tool, MessageTool)
+                    and message_tool.was_used_for_current_context()
+                ):
+                    logger.debug("Response suppressed because message tool was used")
+                    return None
+
             return OutboundMessage(
                 channel=msg.channel,
                 chat_id=msg.chat_id,
@@ -533,14 +543,26 @@ class AgentLoop:
             channel=origin_channel,
             chat_id=origin_chat_id,
         )
-        final_content, _ = await self._run_agent_loop(initial_messages)
+        final_content, tools_used = await self._run_agent_loop(initial_messages)
 
         if final_content is None:
             final_content = "Background task completed."
 
         session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
-        session.add_message("assistant", final_content)
+        session.add_message(
+            "assistant", final_content, tools_used=tools_used if tools_used else None
+        )
         self.sessions.save(session)
+
+        # If the agent already used the message tool to notify the user,
+        # don't send a second message with the same content.
+        if message_tool := self.tools.get("message"):
+            if (
+                isinstance(message_tool, MessageTool)
+                and message_tool.was_used_for_current_context()
+            ):
+                logger.debug("System message response suppressed because message tool was used")
+                return None
 
         return OutboundMessage(
             channel=origin_channel, chat_id=origin_chat_id, content=final_content

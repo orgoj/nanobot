@@ -18,11 +18,17 @@ class MessageTool(Tool):
         self._send_callback = send_callback
         self._default_channel = default_channel
         self._default_chat_id = default_chat_id
+        self._used_for_current_context = False
 
     def set_context(self, channel: str, chat_id: str) -> None:
         """Set the current message context."""
         self._default_channel = channel
         self._default_chat_id = chat_id
+        self._used_for_current_context = False
+
+    def was_used_for_current_context(self) -> bool:
+        """Check if the tool was used to send a message to the current context."""
+        return self._used_for_current_context
 
     def set_send_callback(self, callback: Callable[[OutboundMessage], Awaitable[None]]) -> None:
         """Set the callback for sending messages."""
@@ -67,6 +73,8 @@ class MessageTool(Tool):
 
         try:
             await self._send_callback(msg)
+            if channel == self._default_channel and chat_id == self._default_chat_id:
+                self._used_for_current_context = True
             return f"Message sent to {channel}:{chat_id}"
         except Exception as e:
             return f"Error sending message: {str(e)}"

@@ -368,22 +368,31 @@ def gateway(
     # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
         """Execute a cron job through the agent."""
+        # Use a special session key for cron jobs
+        session_key = f"cron:{job.id}"
+
+        # We need to know if the agent used the message tool to avoid double-publishing
+        # For now, we can check if the response is returned.
+        # Actually, AgentLoop.process_direct will return the final content.
+
         response = await agent.process_direct(
             job.payload.message,
-            session_key=f"cron:{job.id}",
+            session_key=session_key,
             channel=job.payload.channel or "cli",
             chat_id=job.payload.to or "direct",
         )
-        if job.payload.deliver and job.payload.to:
-            from nanobot.bus.events import OutboundMessage
 
-            await bus.publish_outbound(
-                OutboundMessage(
-                    channel=job.payload.channel or "cli",
-                    chat_id=job.payload.to,
-                    content=response or "",
+        if job.payload.deliver and job.payload.to:
+            if response:
+                from nanobot.bus.events import OutboundMessage
+
+                await bus.publish_outbound(
+                    OutboundMessage(
+                        channel=job.payload.channel or "cli",
+                        chat_id=job.payload.to,
+                        content=response,
+                    )
                 )
-            )
         return response
 
     cron.on_job = on_cron_job
