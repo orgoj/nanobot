@@ -161,11 +161,9 @@ class LiteLLMProvider(LLMProvider):
             return self._parse_response(response)
         except Exception as e:
             # Return error as content for graceful handling
-            # Escape HTML tags to avoid loguru color-parsing errors
-            safe_msg = str(e).replace("<", "&lt;").replace(">", "&gt;")
-            logger.error(f"LLM call failed ({model}): {safe_msg}")
+            logger.error(f"LLM call failed ({model}): {str(e)}")
             return LLMResponse(
-                content=f"Error calling LLM: {safe_msg}",
+                content=f"Error calling LLM: {str(e)}",
                 finish_reason="error",
             )
 

@@ -50,15 +50,11 @@ def setup_logging(config: Config):
     if not config.logging.enabled:
         return
 
-    # Stderr handler
+    # Stderr handler - plain text, no color tags to avoid parsing errors
     logger.add(
         sys.stderr,
         level=config.logging.stderr_level,
-        # format="<red>{level: <8}</red> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        # Use a more robust formatting to avoid ValueError with HTML tags in messages
-        format=lambda record: (
-            f"<red>{record['level'].name: <8}</red> | <cyan>{record['name']}</cyan>:<cyan>{record['function']}</cyan>:<cyan>{record['line']}</cyan> - <level>{record['message'].replace('<', '&lt;').replace('>', '&gt;')}</level>\n"
-        ),
+        format="{level: <8} | {name}:{function}:{line} - {message}\n",
     )
 
     # File handler (JSONL)
