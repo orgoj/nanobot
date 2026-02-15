@@ -643,9 +643,22 @@ Respond with ONLY valid JSON, no markdown fences."""
                 timeout=60.0,
             )
             text = (response.content or "").strip()
-            if text.startswith("```"):
+
+            # More robust JSON extraction
+            json_start = text.find("{")
+            json_end = text.rfind("}")
+            if json_start != -1 and json_end != -1:
+                text = text[json_start : json_end + 1]
+            elif text.startswith("```"):
                 text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            result = json.loads(text)
+
+            try:
+                result = json.loads(text)
+            except json.JSONDecodeError as je:
+                logger.error(
+                    f"Failed to parse consolidation JSON: {je}. Raw text preview: {text[:100]}..."
+                )
+                return
 
             if entry := result.get("history_entry"):
                 memory.append_history(entry)
