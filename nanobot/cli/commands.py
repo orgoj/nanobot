@@ -412,7 +412,9 @@ def gateway(
     if cron_status["jobs"] > 0:
         console.print(f"[green]✓[/green] Cron: {cron_status['jobs']} scheduled jobs")
 
-    console.print(f"[green]✓[/green] Heartbeat: every {config.agents.defaults.heartbeat_interval // 60}m")
+    console.print(
+        f"[green]✓[/green] Heartbeat: every {config.agents.defaults.heartbeat_interval // 60}m"
+    )
 
     async def run():
         try:

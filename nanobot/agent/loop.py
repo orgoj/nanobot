@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -116,6 +117,7 @@ class AgentLoop:
 
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
+        self.start_time = datetime.now()
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
             provider=provider,
@@ -345,31 +347,124 @@ class AgentLoop:
             session = self.sessions.get_or_create(key)
 
             # Handle slash commands
-            cmd = msg.content.strip().lower()
-            if cmd == "/new":
-                # Capture messages before clearing (avoid race condition with background task)
-                messages_to_archive = session.messages.copy()
-                session.clear()
-                self.sessions.save(session)
-                self.sessions.invalidate(session.key)
+            raw_content = msg.content.strip()
+            if raw_content.startswith("/"):
+                parts = raw_content.split()
+                cmd = parts[0].lower()
 
-                async def _consolidate_and_cleanup():
-                    temp_session = Session(key=session.key)
-                    temp_session.messages = messages_to_archive
-                    await self._consolidate_memory(temp_session, archive_all=True)
+                if cmd == "/new":
+                    # Capture messages before clearing (avoid race condition with background task)
+                    messages_to_archive = session.messages.copy()
+                    session.clear()
+                    self.sessions.save(session)
+                    self.sessions.invalidate(session.key)
 
-                asyncio.create_task(_consolidate_and_cleanup())
-                return OutboundMessage(
-                    channel=msg.channel,
-                    chat_id=msg.chat_id,
-                    content="New session started. Memory consolidation in progress.",
-                )
-            if cmd == "/help":
-                return OutboundMessage(
-                    channel=msg.channel,
-                    chat_id=msg.chat_id,
-                    content="🐈 nanobot commands:\n/new — Start a new conversation\n/help — Show available commands",
-                )
+                    async def _consolidate_and_cleanup():
+                        temp_session = Session(key=session.key)
+                        temp_session.messages = messages_to_archive
+                        await self._consolidate_memory(temp_session, archive_all=True)
+
+                    asyncio.create_task(_consolidate_and_cleanup())
+                    return OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content="New session started. Memory consolidation in progress.",
+                    )
+                elif cmd == "/status":
+                    active = self.subagents.list_active()
+                    if not active:
+                        return OutboundMessage(
+                            channel=msg.channel,
+                            chat_id=msg.chat_id,
+                            content="No active background subagents.",
+                        )
+
+                    lines = ["### Active Subagents Status\n"]
+                    for s in active:
+                        elapsed = (datetime.now() - s.start_time).total_seconds()
+                        uptime = f"{int(elapsed)}s"
+                        if elapsed >= 60:
+                            minutes = int(elapsed // 60)
+                            seconds = int(elapsed % 60)
+                            uptime = f"{minutes}m {seconds}s"
+
+                        task_preview = s.task[:100].replace("\n", " ").strip()
+                        if len(s.task) > 100:
+                            task_preview += "..."
+
+                        lines.append(f"- **{s.label}** (`{s.task_id}`)")
+                        lines.append(f"  - Uptime: {uptime}")
+                        lines.append(f"  - Task: {task_preview}")
+
+                    return OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content="\n".join(lines),
+                    )
+                elif cmd == "/cancel":
+                    if len(parts) > 1:
+                        task_id = parts[1]
+                        success = await self.subagents.cancel(task_id)
+                        if success:
+                            return OutboundMessage(
+                                channel=msg.channel,
+                                chat_id=msg.chat_id,
+                                content=f"✅ Subagent `{task_id}` cancelled.",
+                            )
+                        else:
+                            return OutboundMessage(
+                                channel=msg.channel,
+                                chat_id=msg.chat_id,
+                                content=f"❌ Could not cancel subagent `{task_id}`. It might not exist or is already finished.",
+                            )
+                    else:
+                        return OutboundMessage(
+                            channel=msg.channel,
+                            chat_id=msg.chat_id,
+                            content="Usage: `/cancel <task_id>`",
+                        )
+                elif cmd == "/ping":
+                    return OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content="pong 🏓",
+                    )
+                elif cmd == "/uptime":
+                    elapsed = (datetime.now() - self.start_time).total_seconds()
+                    days = int(elapsed // 86400)
+                    hours = int((elapsed % 86400) // 3600)
+                    minutes = int((elapsed % 3600) // 60)
+                    seconds = int(elapsed % 60)
+
+                    parts_list = []
+                    if days > 0:
+                        parts_list.append(f"{days}d")
+                    if hours > 0:
+                        parts_list.append(f"{hours}h")
+                    if minutes > 0:
+                        parts_list.append(f"{minutes}m")
+                    parts_list.append(f"{seconds}s")
+
+                    return OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content=f"🐈 nanobot uptime: {' '.join(parts_list)}",
+                    )
+                elif cmd == "/help":
+                    help_text = (
+                        "🐈 nanobot commands:\n"
+                        "/new — Start a new conversation\n"
+                        "/status — Show active subagents status\n"
+                        "/cancel <id> — Cancel a running subagent\n"
+                        "/uptime — Show agent uptime\n"
+                        "/ping — Check if agent is responsive\n"
+                        "/help — Show this help message"
+                    )
+                    return OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content=help_text,
+                    )
 
             if len(session.messages) > self.memory_window:
                 asyncio.create_task(self._consolidate_memory(session))
@@ -554,8 +649,6 @@ Respond with ONLY valid JSON, no markdown fences."""
 
         lines = [f"You have {len(active)} active background subagent(s):"]
         for s in active:
-            from datetime import datetime
-
             elapsed = (datetime.now() - s.start_time).total_seconds()
             lines.append(f"- [{s.task_id}] {s.label} (running for {int(elapsed)}s)")
             lines.append(f"  Task: {s.task[:80]}...")

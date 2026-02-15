@@ -698,6 +698,19 @@ That's it! Environment variables, model prefixing, config matching, and `nanobot
 
 Interactive mode exits: `exit`, `quit`, `/exit`, `/quit`, `:q`, or `Ctrl+D`.
 
+### Chat Commands
+
+When using nanobot through chat channels (Telegram, Discord, etc.), you can use the following slash commands:
+
+| Command | Description |
+|---------|-------------|
+| `/new` | Start a new conversation and archive old messages to memory |
+| `/status` | Show technical status of all active background subagents |
+| `/cancel <id>` | Cancel a specific running subagent |
+| `/uptime` | Show how long the agent has been running |
+| `/ping` | Quick check if the agent is alive |
+| `/help` | Show available commands |
+
 <details>
 <summary><b>Scheduled Tasks (Cron)</b></summary>
 
