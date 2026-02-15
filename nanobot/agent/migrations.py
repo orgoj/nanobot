@@ -1,5 +1,6 @@
-"""Automatic migration engine for nanobot upgrades."""
+"""KISS migration engine for nanobot upgrades."""
 
+import re
 from pathlib import Path
 
 from loguru import logger
@@ -8,63 +9,60 @@ from loguru import logger
 class MigrationManager:
     """
     MigrationManager handles automatic execution of upgrade instructions.
-
-    It scans the 'upgrades' directory for .md files, executes them via
-    the agent loop as instructions, and tracks which ones have been applied.
+    Uses a simple version number stored in .version file.
     """
 
     def __init__(self, workspace: Path, agent_loop):
         self.workspace = workspace
-        # upgrades directory is inside the package: nanobot/agent/upgrades/
         self.upgrades_dir = Path(__file__).parent / "upgrades"
-        self.state_file = workspace.parent / ".applied_migrations"
+        self.version_file = workspace.parent / ".version"
         self.agent = agent_loop
 
     async def run_pending(self):
-        """Scan and run all pending migrations."""
+        """Run all upgrades with version higher than current."""
+        current_v = self._get_version()
+
+        # Scan for v{number}_*.md files
+        pending = []
         if not self.upgrades_dir.exists():
-            self.upgrades_dir.mkdir(parents=True, exist_ok=True)
             return
 
-        applied = self._get_applied()
+        for f in self.upgrades_dir.glob("v*.md"):
+            match = re.match(r"v(\d+)", f.name)
+            if match:
+                version = int(match.group(1))
+                if version > current_v:
+                    pending.append((version, f))
 
-        # Sort migrations by name to ensure consistent order
-        migrations = sorted(self.upgrades_dir.glob("*.md"))
+        # Sort by version number and apply
+        for version, f in sorted(pending):
+            logger.info(f"Applying upgrade v{version}: {f.name}")
+            try:
+                instruction = f.read_text()
+                await self.agent.process_direct(
+                    instruction,
+                    session_key=f"migration:v{version}",
+                    channel="system",
+                    chat_id="migration",
+                )
+                self._set_version(version)
+                logger.info(f"Upgrade to v{version} successful.")
+            except Exception as e:
+                logger.error(f"Failed to apply upgrade v{version}: {e}")
+                break  # Stop at first failure to keep version consistent
 
-        for file in migrations:
-            if file.name not in applied:
-                logger.info(f"Applying automatic migration: {file.name}")
-                try:
-                    instruction = file.read_text()
-                    # Execute the instruction via the agent loop
-                    # We use a dedicated session key for migrations
-                    await self.agent.process_direct(
-                        instruction,
-                        session_key=f"migration:{file.name}",
-                        channel="system",
-                        chat_id="migration",
-                    )
-                    self._mark_applied(file.name)
-                    logger.info(f"Migration {file.name} applied successfully.")
-                except Exception as e:
-                    logger.error(f"Failed to apply migration {file.name}: {e}")
-                    # We don't mark as applied so it can be retried on next start
-                    # or fixed by the user
-
-    def _get_applied(self) -> set[str]:
-        """Read the set of already applied migrations."""
-        if not self.state_file.exists():
-            return set()
+    def _get_version(self) -> int:
+        """Read the current version number."""
+        if not self.version_file.exists():
+            return 0
         try:
-            return set(self.state_file.read_text().splitlines())
-        except Exception as e:
-            logger.error(f"Error reading migration state: {e}")
-            return set()
+            return int(self.version_file.read_text().strip())
+        except Exception:
+            return 0
 
-    def _mark_applied(self, name: str):
-        """Mark a migration as applied."""
+    def _set_version(self, version: int):
+        """Write the new version number."""
         try:
-            with open(self.state_file, "a") as f:
-                f.write(f"{name}\n")
+            self.version_file.write_text(str(version))
         except Exception as e:
-            logger.error(f"Error marking migration {name} as applied: {e}")
+            logger.error(f"Error saving version {version}: {e}")
