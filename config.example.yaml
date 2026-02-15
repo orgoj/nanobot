@@ -38,6 +38,8 @@ agents:
     temperature: 0.7
     max_tool_iterations: 20
     task_max_iterations: 30
+    # Max running time for subagents in seconds (e.g. 3600 = 1 hour)
+    task_max_run_time: 3600
     memory_window: 50
     
     # LLM API timeout in seconds (per request)
@@ -65,6 +67,8 @@ agents:
     temperature: 0.7
     max_tokens: 8192
     max_iterations: 30  # Higher for complex workflows
+    # Max running time override in seconds (null = use defaults.task_max_run_time)
+    max_run_time: null
     max_completed_tasks: 100  # Registry cleanup threshold
     
     # LLM timeout override (null = use defaults.llm_timeout)
