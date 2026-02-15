@@ -11,6 +11,20 @@ from loguru import logger
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.providers.registry import find_by_model, find_gateway
 
+# List of standard finish reasons to protect against non-standard provider outputs
+# Rewriting non-standard reasons (like 'abort') to 'stop' ensures internal consistency.
+VALID_FINISH_REASONS = [
+    "stop",
+    "content_filter",
+    "function_call",
+    "tool_calls",
+    "length",
+    "guardrail_intervened",
+    "eos",
+    "finish_reason_unspecified",
+    "malformed_function_call",
+]
+
 
 class LiteLLMProvider(LLMProvider):
     """
@@ -188,23 +202,27 @@ class LiteLLMProvider(LLMProvider):
         choice = response.choices[0]
         message = choice.message
 
-        # Handle 'abort' finish reason which can happen with LiteLLM timeouts or specific provider errors
+        # Handle 'abort' and other non-standard finish reasons
         # Use getattr because Pydantic might have failed to populate it if it was an unknown literal
         finish_reason = getattr(choice, "finish_reason", None) or "stop"
 
-        if finish_reason == "abort":
-            logger.error(
-                f"LLM call was aborted (finish_reason='abort'). Model: {getattr(response, 'model', 'unknown')}. "
-                f"Usage: {getattr(response, 'usage', 'unknown')}"
-            )
-            # If aborted and no content, mark as error
-            if not message.content and not (hasattr(message, "tool_calls") and message.tool_calls):
-                return LLMResponse(
-                    content="Error: LLM call was aborted by provider (likely timeout or overload).",
-                    finish_reason="error",
+        if finish_reason not in VALID_FINISH_REASONS:
+            if finish_reason == "abort":
+                logger.error(
+                    f"LLM call was aborted (finish_reason='abort'). Model: {getattr(response, 'model', 'unknown')}. "
+                    f"Usage: {getattr(response, 'usage', 'unknown')}"
                 )
-            # If we have some content despite 'abort', we might want to use it,
-            # but let's be safe and mark it as 'abort' so the caller can decide.
+                # If aborted and no content, mark as error
+                if not message.content and not (
+                    hasattr(message, "tool_calls") and message.tool_calls
+                ):
+                    return LLMResponse(
+                        content="Error: LLM call was aborted by provider (likely timeout or overload).",
+                        finish_reason="error",
+                    )
+
+            # Rewrite unknown/non-standard reasons to "stop" (internal response sanitization)
+            finish_reason = "stop"
 
         tool_calls = []
         if hasattr(message, "tool_calls") and message.tool_calls:
