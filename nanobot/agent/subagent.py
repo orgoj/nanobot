@@ -33,6 +33,7 @@ class SubagentState:
     task: str
     label: str
     origin: dict[str, str]
+    working_dir: str | None = None
     start_time: datetime = field(default_factory=datetime.now)
     status: str = "running"  # running, completed, failed, cancelled
     end_time: datetime | None = None
@@ -103,6 +104,7 @@ class SubagentManager:
         label: str | None = None,
         origin_channel: str = "cli",
         origin_chat_id: str = "direct",
+        working_dir: str | None = None,
     ) -> str:
         """Spawn a subagent to execute a task in the background."""
         task_id = str(uuid.uuid4())[:8]
@@ -118,6 +120,7 @@ class SubagentManager:
             task=task,
             label=display_label,
             origin=origin,
+            working_dir=working_dir,
         )
         self._registry[task_id] = state
 
@@ -201,7 +204,7 @@ class SubagentManager:
                 tools.register(ListDirTool(allowed_dir=allowed_dir))
                 tools.register(
                     ExecTool(
-                        working_dir=str(self.workspace),
+                        working_dir=state.working_dir or str(self.workspace),
                         timeout=self.exec_config.timeout,
                         restrict_to_workspace=self.restrict_to_workspace,
                     )
@@ -389,6 +392,7 @@ Summarize this naturally for the user. Keep it brief."""
     def _build_subagent_prompt(self, state: SubagentState) -> str:
         """Build a focused system prompt for the subagent."""
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
+        working_dir = state.working_dir or str(self.workspace)
 
         return f"""# Subagent [{state.task_id}]
 
@@ -405,7 +409,7 @@ You are a subagent spawned by the main agent to complete a specific task.
 
 ## Capabilities
 - Full file access in workspace: {self.workspace}
-- Shell execution (timeout={self.exec_config.timeout}s)
+- Shell execution in: {working_dir} (timeout={self.exec_config.timeout}s)
 - Web search and fetch
 
 ## Constraints

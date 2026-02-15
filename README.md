@@ -38,6 +38,8 @@
 
 🤖 **Interactive Subagent Orchestration**: Spawn background agents, monitor their progress, and inject real-time guidance via a mailbox pattern.
 
+🆙 **Self-Healing & Auto-Upgrades**: Built-in migration engine automatically applies system upgrades and instruction refinements on startup.
+
 🚀 **Tiered Model Support**: Use fast models (like Claude Sonnet) for chat and powerful models (like Claude Opus or GLM-5) for complex subagent tasks.
 
 🔬 **Research-Ready**: Clean, readable code that's easy to understand, modify, and extend for research.

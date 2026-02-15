@@ -427,6 +427,12 @@ def gateway(
 
     async def run():
         try:
+            # Run automatic migrations first
+            from nanobot.agent.migrations import MigrationManager
+
+            migrations = MigrationManager(config.workspace_path, agent)
+            await migrations.run_pending()
+
             await cron.start()
             await heartbeat.start()
 
@@ -534,6 +540,12 @@ def agent(
     if message:
         # Single message mode
         async def run_once():
+            # Run automatic migrations first
+            from nanobot.agent.migrations import MigrationManager
+
+            migrations = MigrationManager(config.workspace_path, agent_loop)
+            await migrations.run_pending()
+
             with _thinking_ctx():
                 response = await agent_loop.process_direct(message, session_id)
             _print_agent_response(response, render_markdown=markdown)
@@ -554,6 +566,12 @@ def agent(
         signal.signal(signal.SIGINT, _exit_on_sigint)
 
         async def run_interactive():
+            # Run automatic migrations first
+            from nanobot.agent.migrations import MigrationManager
+
+            migrations = MigrationManager(config.workspace_path, agent_loop)
+            await migrations.run_pending()
+
             while True:
                 try:
                     _flush_pending_tty_input()

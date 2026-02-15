@@ -51,15 +51,26 @@ class SpawnTool(Tool):
                     "type": "string",
                     "description": "Optional short label for the task (for display)",
                 },
+                "working_dir": {
+                    "type": "string",
+                    "description": "Optional working directory for the subagent. Use absolute paths.",
+                },
             },
             "required": ["task"],
         }
 
-    async def execute(self, task: str, label: str | None = None, **kwargs: Any) -> str:
+    async def execute(
+        self,
+        task: str,
+        label: str | None = None,
+        working_dir: str | None = None,
+        **kwargs: Any,
+    ) -> str:
         """Spawn a subagent to execute the given task."""
         return await self._manager.spawn(
             task=task,
             label=label,
+            working_dir=working_dir,
             origin_channel=self._origin_channel,
             origin_chat_id=self._origin_chat_id,
         )
